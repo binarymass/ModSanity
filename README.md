@@ -11,7 +11,7 @@
 [Features](#-features) • [Installation](#-installation) • [Quick Start](#-quick-start) • [Contributing](#-contributing) • [Donate](https://buymeacoffee.com/tdpunkn0wnable)
 
 
-                                                          [Release v.0.1.6](https://github.com/binarymass/ModSanity/releases/tag/ModSanity)
+[Release v.0.1.6](https://github.com/binarymass/ModSanity/releases/tag/ModSanity)
 
 **If you find this tool useful, consider showing your support with a donation. Obviously not a requirement, but a little goes a long way towards future development**
 
