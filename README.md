@@ -8,7 +8,7 @@
 [![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=flat&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Linux](https://img.shields.io/badge/Linux-FCC624?style=flat&logo=linux&logoColor=black)](https://www.linux.org/)
 
-[Features](#-features) • [Installation](#-installation) • [Quick Start](#-quick-start) • [Documentation](#-documentation) • [Contributing](#-contributing) • [Donate](https://buymeacoffee.com/tdpunkn0wnable)
+[Features](#-features) • [Installation](#-installation) • [Quick Start](#-quick-start) • [Contributing](#-contributing) • [Donate](https://buymeacoffee.com/tdpunkn0wnable)
 
 **If you find this tool useful, consider showing your support with a donation. Obviously not a requirement, but a little goes a long way towards future development**
 
@@ -271,15 +271,6 @@ modsanity nexus status              # Show account status
 modsanity deploy                    # Deploy mods to game directory
 modsanity status                    # Show current status
 ```
-
----
-
-## 📚 Documentation
-
-- **[FOMOD User Guide](docs/FOMOD_USER_GUIDE.md)** - Complete FOMOD installer documentation
-- **[FOMOD Architecture](docs/FOMOD_ARCHITECTURE.md)** - Technical details of FOMOD implementation
-- **[Packaging Guide](PACKAGING.md)** - How to create releases
-- **[Changelog](CHANGELOG.md)** - Version history and updates
 
 ---
 
