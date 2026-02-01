@@ -1,0 +1,64 @@
+[package]
+name = "modsanity"
+version = "0.1.6"
+edition = "2021"
+authors = ["ModSanity Contributors"]
+description = "A CLI/TUI mod manager for Bethesda games on Linux"
+license = "MIT"
+repository = "https://github.com/modsanity/modsanity"
+keywords = ["modding", "skyrim", "bethesda", "nexusmods", "linux"]
+categories = ["command-line-utilities", "games"]
+
+[dependencies]
+# TUI
+ratatui = "0.29"
+crossterm = "0.28"
+
+# Async
+tokio = { version = "1", features = ["full"] }
+
+# HTTP/API
+reqwest = { version = "0.12", features = ["json", "stream"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+toml = "0.8"
+quick-xml = { version = "0.37", features = ["serialize"] }
+
+# Archives
+zip = "2"
+sevenz-rust = "0.6"
+
+# Database
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Utilities
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+directories = "6"
+walkdir = "2"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+url = "2"
+open = "5"
+encoding_rs = "0.8"
+futures = "0.3"
+async-trait = "0.1"
+indicatif = "0.17"
+regex-lite = "0.1"
+which = "7"
+
+[dev-dependencies]
+tempfile = "3"
+mockall = "0.13"
+
+[profile.release]
+lto = true
+strip = true
