@@ -10,6 +10,8 @@
 
 [Features](#-features) • [Installation](#-installation) • [Quick Start](#-quick-start) • [Documentation](#-documentation) • [Contributing](#-contributing) • [Donate](https://buymeacoffee.com/tdpunkn0wnable)
 
+**If you find this tool useful, consider supporting me or showing your support with a donation. Obviously not a requirement, but a little goes a long way.**
+
 </div>
 
 ---
