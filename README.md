@@ -8,7 +8,7 @@
 [![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=flat&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Linux](https://img.shields.io/badge/Linux-FCC624?style=flat&logo=linux&logoColor=black)](https://www.linux.org/)
 
-[Features](#-features) • [Installation](#-installation) • [Quick Start](#-quick-start) • [Documentation](#-documentation) • [Contributing](#-contributing)
+[Features](#-features) • [Installation](#-installation) • [Quick Start](#-quick-start) • [Documentation](#-documentation) • [Contributing](#-contributing) • [Donate)(https://buymeacoffee.com/tdpunkn0wnable)
 
 </div>
 
@@ -50,7 +50,6 @@ ModSanity is a native Linux mod manager built from the ground up for Bethesda ga
 
 ### 👤 Profile System
 - **Unlimited profiles** for different playthroughs or testing
-- **Profile import/export** for sharing configurations
 - **Per-profile FOMOD installations** for variant mod setups
 - **Instant switching** between mod configurations
 - **Isolated plugin load orders** per profile
@@ -141,8 +140,8 @@ Get your API key at: https://www.nexusmods.com/users/myaccount?tab=api
 
 **Option B - TUI Setup:**
 1. Launch TUI: `modsanity`
-2. Press `F5` for Settings
-3. Select "NexusMods Login" → "Personal API Key"
+2. Press `F4` for Settings
+3. Select "NexusMods API Key"
 4. Paste your key
 
 ### 3. Launch the TUI
@@ -182,9 +181,8 @@ modsanity deploy
 |-----|--------|
 | `F1` | Mods screen |
 | `F2` | Plugins screen |
-| `F3` | Downloads/Browse screen |
-| `F4` | Profiles screen |
-| `F5` | Settings screen |
+| `F3` | Profiles screen |
+| `F4` | Settings screen |
 | `g` | Game selection |
 | `?` | Toggle help overlay |
 | `q` / `Ctrl+C` | Quit |
@@ -210,14 +208,14 @@ modsanity deploy
 | `s` | Save and optimize load order |
 | `↑/k` `↓/j` | Navigate plugins |
 
-### Profiles Screen (F4)
+### Profiles Screen (F3)
 | Key | Action |
 |-----|--------|
 | `Enter` | Switch to profile |
 | `n` | Create new profile |
 | `d` / `Delete` | Delete profile |
 
-### Browse/Downloads Screen (F3)
+### Browse/Downloads Screen 
 | Key | Action |
 |-----|--------|
 | `Enter` | Download selected mod |
@@ -445,7 +443,7 @@ ModSanity is licensed under the [MIT License](LICENSE).
 - [ ] xEdit integration for conflict detection
 - [ ] SKSE/F4SE version management
 
-### Long-term Goals
+### Long-term Goals (Function Before Finesse)
 - GUI version (GTK/Qt)
 - Windows/macOS support
 - Integration with other mod sites (ModDB, LoversLab, etc.)
