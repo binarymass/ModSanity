@@ -160,9 +160,10 @@ modsanity tui
 ### 4. Install Your First Mod
 
 **Via NexusMods (in TUI):**
-1. Press `/` to search NexusMods
-2. Select a mod and download
-3. Press `i` to install from downloads
+1. Press `b` to browse NexusMods
+2. Press 's' to search from the  browse window
+3. Select a mod and download
+4. Press `i` to install from downloads
 
 **Via Local Archive:**
 ```bash
