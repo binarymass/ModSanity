@@ -2,7 +2,7 @@
 
 <div align="center">
 
-**A powerful, keyboard-first mod manager for Bethesda games on Linux**
+**A powerful, Terminal Based mod manager for Bethesda games on Linux**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=flat&logo=rust&logoColor=white)](https://www.rust-lang.org/)
@@ -21,11 +21,11 @@
 
 ##  Overview
 
-ModSanity is a native Linux mod manager built from the ground up for Bethesda games. Designed for power users who prefer terminal workflows, it combines the full feature set of tools like Mod Organizer 2 and Vortex with the speed and efficiency of a keyboard-driven TUI.
+ModSanity is a native Linux mod manager built from the ground up for Bethesda games. Designed for power users who prefer terminal workflows, it combines the full feature set of tools like Mod Organizer 2 and Vortex with the speed and efficiency of a Terminal TUI.
 
 **Why ModSanity?**
 -  **Linux-native**: Built specifically for Linux with first-class Steam/Proton support
--  **Keyboard-first**: Complete TUI interface with vim-style navigation
+-  **Terminal Based**: Complete TUI interface with vim-style navigation
 -  **Zero compromise**: Full FOMOD installer support, conflict detection, and profile management
 -  **Fast & efficient**: Written in Rust for maximum performance
 -  **Safe & deterministic**: Transactional deployments with automatic rollback
@@ -76,7 +76,7 @@ ModSanity is a native Linux mod manager built from the ground up for Bethesda ga
 
 ###  Rich TUI Interface
 - **Interactive terminal UI** built with Ratatui
-- **Keyboard-driven navigation** (vim-style keybindings supported)
+- **Keyboard navigation** (vim-style keybindings supported)
 - **Real-time status updates** during operations
 - **Context-sensitive help** with `?` key
 - **Multi-screen workflow**: Mods, Plugins, Downloads, Profiles, Settings
