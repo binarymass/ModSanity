@@ -230,7 +230,7 @@ modsanity deploy
 
 ---
 
-## 🖥️ CLI Commands
+##  CLI Commands
 
 ### Game Management
 ```bash
