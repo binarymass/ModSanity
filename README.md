@@ -19,29 +19,29 @@
 
 ---
 
-## 🎯 Overview
+##  Overview
 
 ModSanity is a native Linux mod manager built from the ground up for Bethesda games. Designed for power users who prefer terminal workflows, it combines the full feature set of tools like Mod Organizer 2 and Vortex with the speed and efficiency of a keyboard-driven TUI.
 
 **Why ModSanity?**
-- 🐧 **Linux-native**: Built specifically for Linux with first-class Steam/Proton support
-- ⌨️ **Keyboard-first**: Complete TUI interface with vim-style navigation
-- 🎯 **Zero compromise**: Full FOMOD installer support, conflict detection, and profile management
-- 🚀 **Fast & efficient**: Written in Rust for maximum performance
-- 🔒 **Safe & deterministic**: Transactional deployments with automatic rollback
-- 🎮 **Just works**: Automatic game detection, intelligent mod categorization
+-  **Linux-native**: Built specifically for Linux with first-class Steam/Proton support
+-  **Keyboard-first**: Complete TUI interface with vim-style navigation
+-  **Zero compromise**: Full FOMOD installer support, conflict detection, and profile management
+-  **Fast & efficient**: Written in Rust for maximum performance
+-  **Safe & deterministic**: Transactional deployments with automatic rollback
+-  **Just works**: Automatic game detection, intelligent mod categorization
 
 ---
 
-## ✨ Features
+##  Features
 
-### 🎮 Game Management
+###  Game Management
 - **Automatic game detection** for Steam libraries including Proton prefixes
 - **Multi-game support** for Bethesda Creation Engine titles
 - **Intelligent path resolution** for Windows games running under Proton
 - Tested with Skyrim SE, Skyrim VR, and designed for Fallout 4, Oblivion, and more
 
-### 📦 Advanced Mod Management
+###  Advanced Mod Management
 - **Full FOMOD installer support** with interactive wizard interface
   - Multi-step installations with conditional logic
   - Option flags and dependency resolution
@@ -53,20 +53,20 @@ ModSanity is a native Linux mod manager built from the ground up for Bethesda ga
 - **Multiple deployment methods**: symlinks, hardlinks, or file copies
 - **Archive support**: ZIP, 7-Zip with automatic extraction
 
-### 👤 Profile System
+###  Profile System
 - **Unlimited profiles** for different playthroughs or testing
 - **Per-profile FOMOD installations** for variant mod setups
 - **Instant switching** between mod configurations
 - **Isolated plugin load orders** per profile
 
-### 🧩 Plugin Load Order Management
+###  Plugin Load Order Management
 - **LOOT-compatible sorting** with masterlist integration
 - **Dependency resolution** ensuring masters load correctly
 - **Group-based ordering** for optimal plugin arrangement
 - **Manual override support** for fine-tuning
 - **ESP/ESM/ESL support** with proper flag handling
 
-### 🌐 NexusMods Integration
+###  NexusMods Integration
 - **Direct mod browsing** from the TUI
 - **Search functionality** across all game mods
 - **One-click downloads** with progress tracking
@@ -74,14 +74,14 @@ ModSanity is a native Linux mod manager built from the ground up for Bethesda ga
 - **Requirement checking** via NexusMods API
 - **Personal API key and SSO support** (experimental)
 
-### 🎨 Rich TUI Interface
+###  Rich TUI Interface
 - **Interactive terminal UI** built with Ratatui
 - **Keyboard-driven navigation** (vim-style keybindings supported)
 - **Real-time status updates** during operations
 - **Context-sensitive help** with `?` key
 - **Multi-screen workflow**: Mods, Plugins, Downloads, Profiles, Settings
 
-### 🔧 Developer-Friendly
+###  Developer-Friendly
 - **CLI mode** for scripting and automation
 - **JSON/YAML/TOML** configuration support
 - **Comprehensive logging** with tracing support
@@ -90,7 +90,7 @@ ModSanity is a native Linux mod manager built from the ground up for Bethesda ga
 
 ---
 
-## 📥 Installation
+##  Installation
 
 ### From Source (Recommended)
 
@@ -123,7 +123,7 @@ mv modsanity ~/.local/bin/
 
 ---
 
-## 🚀 Quick Start
+##  Quick Start
 
 ### 1. Initial Setup
 
@@ -278,20 +278,20 @@ modsanity status                    # Show current status
 
 ---
 
-## 🎯 FOMOD Installer Support
+##  FOMOD Installer Support
 
 ModSanity includes **full MO2/Vortex-grade FOMOD support**, built from the ground up for Linux:
 
 ### Features
-- ✅ **Complete XML parsing** of `ModuleConfig.xml` and `info.xml`
-- ✅ **Multi-step installations** with pages and groups
-- ✅ **Conditional logic** with flag evaluation
-- ✅ **Requirement validation** (SelectExactlyOne, SelectAtMostOne, etc.)
-- ✅ **File mapping** and custom install paths
-- ✅ **Conflict preview** before installation
-- ✅ **Transactional execution** with automatic rollback on failure
-- ✅ **Persistent choices** - rerun installers with saved selections
-- ✅ **Per-profile installations** - different FOMOD configs per profile
+-  **Complete XML parsing** of `ModuleConfig.xml` and `info.xml`
+-  **Multi-step installations** with pages and groups
+-  **Conditional logic** with flag evaluation
+-  **Requirement validation** (SelectExactlyOne, SelectAtMostOne, etc.)
+-  **File mapping** and custom install paths
+-  **Conflict preview** before installation
+-  **Transactional execution** with automatic rollback on failure
+-  **Persistent choices** - rerun installers with saved selections
+-  **Per-profile installations** - different FOMOD configs per profile
 
 ### Usage
 1. Install a FOMOD-enabled mod
@@ -305,7 +305,7 @@ For details, see [FOMOD_USER_GUIDE.md](docs/FOMOD_USER_GUIDE.md).
 
 ---
 
-## 🏗️ Architecture Highlights
+##  Architecture Highlights
 
 ### Safe & Deterministic
 - **Transactional deployments**: All-or-nothing installations with automatic rollback
@@ -334,7 +334,7 @@ src/
 
 ---
 
-## 🔧 Configuration
+##  Configuration
 
 ### Config Location
 - **Config file**: `~/.config/modsanity/config.toml`
@@ -357,21 +357,21 @@ method = "symlink"  # Options: "symlink", "hardlink", "copy"
 ## 🎮 Supported Games
 
 Currently tested with:
-- ✅ **The Elder Scrolls V: Skyrim Special Edition**
-- ✅ **The Elder Scrolls V: Skyrim VR**
+-  **The Elder Scrolls V: Skyrim Special Edition**
+-  **The Elder Scrolls V: Skyrim VR**
 
 Designed to work with all Creation Engine games:
-- 🔄 Fallout 4
-- 🔄 Fallout: New Vegas
-- 🔄 The Elder Scrolls IV: Oblivion
-- 🔄 Fallout 3
-- 🔄 Starfield
+-  Fallout 4
+-  Fallout: New Vegas
+-  The Elder Scrolls IV: Oblivion
+-  Fallout 3
+-  Starfield
 
 *Community testing and contributions welcome for additional games!*
 
 ---
 
-## 🐛 Known Limitations
+##  Known Limitations
 
 - **NexusMods SSO**: Requires official app registration (use personal API key for now)
 - **Windows-only mods**: Some tools with native Windows executables won't work (use Proton workarounds)
@@ -379,7 +379,7 @@ Designed to work with all Creation Engine games:
 
 ---
 
-## 🤝 Contributing
+##  Contributing
 
 Contributions are welcome! Here's how you can help:
 
@@ -403,13 +403,13 @@ cargo test
 
 ---
 
-## 📜 License
+##  License
 
 ModSanity is licensed under the [MIT License](LICENSE).
 
 ---
 
-## 🙏 Acknowledgments
+##  Acknowledgments
 
 - **LOOT** - Load order optimization algorithms and masterlist format
 - **Mod Organizer 2** - FOMOD specification and mod management patterns
@@ -419,26 +419,26 @@ ModSanity is licensed under the [MIT License](LICENSE).
 
 ---
 
-## 💬 Support & Community
+##  Support & Community
 
 - **Issues**: [GitHub Issues](https://github.com/modsanity/modsanity/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/modsanity/modsanity/discussions)
 
 ---
 
-## 🗺️ Roadmap
+##  Roadmap
 
 ### Planned Features
-- [ ] Collections support (Nexus Collections integration)
-- [ ] Download queue management
-- [ ] Mod update notifications
-- [ ] BSA/BA2 archive extraction
-- [ ] Integrated conflict resolver UI
-- [ ] Web UI (optional companion to TUI)
-- [ ] Cloud profile sync
-- [ ] Mod dependency graph visualization
-- [ ] xEdit integration for conflict detection
-- [ ] SKSE/F4SE version management
+-  Collections support (Nexus Collections integration)
+-  Download queue management
+-  Mod update notifications
+-  BSA/BA2 archive extraction
+-  Integrated conflict resolver UI
+-  Web UI (optional companion to TUI)
+-  Cloud profile sync
+-  Mod dependency graph visualization
+-  xEdit integration for conflict detection
+-  SKSE/F4SE version management
 
 ### Long-term Goals (Function Before Finesse)
 - GUI version (GTK/Qt)
@@ -450,7 +450,7 @@ ModSanity is licensed under the [MIT License](LICENSE).
 
 <div align="center">
 
-**Made with ❤️ for the Linux modding community**
+
 
 [⬆ Back to Top](#modsanity)
 
