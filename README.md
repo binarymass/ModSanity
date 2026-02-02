@@ -354,7 +354,7 @@ method = "symlink"  # Options: "symlink", "hardlink", "copy"
 
 ---
 
-## 🎮 Supported Games
+##  Supported Games
 
 Currently tested with:
 -  **The Elder Scrolls V: Skyrim Special Edition**
