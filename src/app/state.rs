@@ -1,13 +1,24 @@
 //! Application state management
 
 use crate::collections::Collection;
-use crate::db::CategoryRecord;
+use crate::db::{CategoryRecord, ModlistRecord, ModlistEntryRecord, NexusCatalogRecord};
 use crate::games::Game;
-use crate::mods::fomod::{ConditionEvaluator, FileInstruction, FomodInstaller, WizardState};
+use crate::mods::fomod::{FileInstruction, FomodInstaller, WizardState};
 use crate::mods::InstalledMod;
 use crate::plugins::PluginInfo;
 use crate::profiles::Profile;
 use std::path::PathBuf;
+
+/// Modlist review data for load confirmation
+#[derive(Debug, Clone)]
+pub struct ModlistReviewData {
+    pub source_path: String,
+    pub format: String,
+    pub total_mods: usize,
+    pub already_installed: Vec<String>,
+    pub needs_download: Vec<crate::import::ModlistEntry>,
+    pub total_plugins: usize,
+}
 
 /// Current screen in the TUI
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -24,6 +35,20 @@ pub enum Screen {
     Collection,
     Browse,
     LoadOrder,
+    Import,
+    ImportReview,
+    DownloadQueue,
+    NexusCatalog,
+    ModlistReview,
+    ModlistEditor,
+}
+
+/// Modlist editor mode
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ModlistEditorMode {
+    #[default]
+    ListPicker,
+    EntryEditor,
 }
 
 /// Application state for TUI
@@ -206,6 +231,47 @@ pub struct AppState {
 
     /// FOMOD wizard state (when showing full wizard UI)
     pub fomod_wizard_state: Option<FomodWizardState>,
+
+    /// Import state
+    pub import_file_path: String,
+    pub import_batch_id: Option<String>,
+    pub import_results: Vec<crate::import::MatchResult>,
+    pub selected_import_index: usize,
+    pub import_progress: Option<ImportProgress>,
+
+    /// Queue state
+    pub queue_entries: Vec<crate::queue::QueueEntry>,
+    pub selected_queue_index: usize,
+    pub queue_processing: bool,
+
+    /// Nexus catalog state
+    pub catalog_game_domain: String,
+    pub catalog_sync_state: Option<CatalogSyncStatus>,
+    pub catalog_populating: bool,
+    pub catalog_progress: Option<CatalogProgress>,
+
+    /// Modlist save/load state
+    pub modlist_save_path: String,
+    pub modlist_save_format: String,
+    pub modlist_load_path: String,
+    pub modlist_review_data: Option<ModlistReviewData>,
+    pub selected_modlist_entry: usize,
+
+    /// Modlist editor state
+    pub saved_modlists: Vec<ModlistRecord>,
+    pub selected_saved_modlist_index: usize,
+    pub modlist_editor_entries: Vec<ModlistEntryRecord>,
+    pub selected_modlist_editor_index: usize,
+    pub modlist_editor_mode: ModlistEditorMode,
+    pub active_modlist_id: Option<i64>,
+    pub modlist_picker_for_loading: bool,
+
+    /// Catalog browsing state
+    pub catalog_browse_results: Vec<NexusCatalogRecord>,
+    pub selected_catalog_index: usize,
+    pub catalog_search_query: String,
+    pub catalog_browse_offset: i64,
+    pub catalog_total_count: i64,
 }
 
 /// Context for an active download
@@ -256,6 +322,19 @@ pub struct CategorizationProgress {
     pub current_mod_name: String,
     /// Number categorized so far
     pub categorized_count: usize,
+}
+
+/// Import progress information
+#[derive(Debug, Clone)]
+pub struct ImportProgress {
+    /// Current plugin being matched (1-based)
+    pub current_index: usize,
+    /// Total plugins to match
+    pub total_plugins: usize,
+    /// Current plugin name
+    pub current_plugin_name: String,
+    /// Stage of import (parsing, matching, etc)
+    pub stage: String,
 }
 
 /// FOMOD wizard state
@@ -406,6 +485,7 @@ impl AppState {
             active_game,
             show_help: true,
             browse_limit: 50,
+            modlist_save_format: "native".to_string(),
             ..Default::default()
         }
     }
@@ -430,6 +510,21 @@ impl AppState {
         self.status_message = Some(msg.into());
     }
 
+    /// Set status message with success icon
+    pub fn set_status_success(&mut self, msg: impl Into<String>) {
+        self.set_status(format!("✓ {}", msg.into()));
+    }
+
+    /// Set status message with error icon
+    pub fn set_status_error(&mut self, msg: impl Into<String>) {
+        self.set_status(format!("✗ {}", msg.into()));
+    }
+
+    /// Set status message with info icon
+    pub fn set_status_info(&mut self, msg: impl Into<String>) {
+        self.set_status(format!("ℹ {}", msg.into()));
+    }
+
     /// Clear status message
     pub fn clear_status(&mut self) {
         self.status_message = None;
@@ -451,6 +546,11 @@ pub enum InputMode {
     PluginPositionInput,
     ModSearch,
     PluginSearch,
+    ImportFilePath,
+    SaveModlistPath,
+    LoadModlistPath,
+    CatalogSearch,
+    ModlistNameInput,
 }
 
 /// Confirmation dialog
@@ -470,6 +570,8 @@ pub enum ConfirmAction {
     DeleteProfile(String),
     Deploy,
     Purge,
+    ClearQueue,
+    LoadModlist(String),
     // Will be added in Phase 4 when we implement the planner
     // ExecuteFomodPlan(InstallPlan),
 }
@@ -485,4 +587,25 @@ pub struct RequirementsDialog {
     pub selected_index: usize,
     pub game_domain: String,
     pub game_id_numeric: i64,
+}
+
+/// Catalog sync status
+#[derive(Debug, Clone)]
+pub struct CatalogSyncStatus {
+    pub current_page: i32,
+    pub completed: bool,
+    pub last_sync: Option<String>,
+    pub last_error: Option<String>,
+    pub total_mods: i64,
+}
+
+/// Catalog population progress
+#[derive(Debug, Clone)]
+pub struct CatalogProgress {
+    pub pages_fetched: i32,
+    pub mods_inserted: i64,
+    pub mods_updated: i64,
+    pub current_page: i32,
+    pub total_count: i64,  // Total mods in catalog
+    pub current_offset: i32, // Current offset position
 }

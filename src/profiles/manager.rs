@@ -1,10 +1,11 @@
 //! Profile manager
 
-use super::{ModState, Profile};
+use super::Profile;
 use crate::config::Config;
 use crate::db::{Database, ProfileRecord};
+use crate::games::GameDetector;
+use crate::plugins;
 use anyhow::{bail, Context, Result};
-use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -144,10 +145,27 @@ impl ProfileManager {
             }
         }
 
-        // TODO: Apply plugin load order when plugin manager is fully implemented
-        // This would involve:
-        // - Setting enabled state for plugins in profile.enabled_plugins
-        // - Setting load order based on profile.load_order
+        // Apply plugin state/load order files if we can resolve the game installation.
+        if !profile.enabled_plugins.is_empty() || !profile.load_order.is_empty() {
+            let detected = GameDetector::detect_all().await;
+            if let Some(game) = detected.into_iter().find(|g| g.id == game_id) {
+                if !profile.enabled_plugins.is_empty() {
+                    plugins::write_plugins_txt(&game, &profile.enabled_plugins)
+                        .context("Failed to write plugins.txt for profile switch")?;
+                }
+
+                if !profile.load_order.is_empty() {
+                    plugins::write_loadorder_txt(&game, &profile.load_order)
+                        .context("Failed to write loadorder.txt for profile switch")?;
+                }
+            } else {
+                tracing::warn!(
+                    "Profile '{}' has plugin state, but game '{}' is not currently detected; skipping plugins/loadorder write",
+                    name,
+                    game_id
+                );
+            }
+        }
 
         // Update config
         let mut config = self.config.write().await;

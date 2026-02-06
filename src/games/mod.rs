@@ -181,6 +181,11 @@ impl Game {
             GameType::Starfield => "Starfield",
         }
     }
+
+    /// Get the NexusMods game domain for API calls
+    pub fn nexus_game_domain(&self) -> String {
+        self.nexus_game_id.clone()
+    }
 }
 
 /// Game detection utilities

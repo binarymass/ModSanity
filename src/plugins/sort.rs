@@ -118,13 +118,16 @@ fn topological_sort(
     metadata_map: Option<&HashMap<String, super::masterlist::PluginMetadata>>,
 ) -> Result<Vec<usize>> {
     let n = plugins.len();
-    let mut in_degree = vec![0; n];
+    let mut in_degree = vec![0usize; n];
     let mut sorted = Vec::new();
 
-    // Calculate in-degrees (number of incoming edges)
-    for deps in graph.values() {
+    // Build reverse graph: reverse_graph[dep] = list of nodes that depend on dep
+    // graph[i] = nodes that i depends on, so if i depends on dep, dep must come first
+    let mut reverse_graph: HashMap<usize, Vec<usize>> = HashMap::new();
+    for (&i, deps) in graph.iter() {
+        in_degree[i] = deps.len();
         for &dep in deps {
-            in_degree[dep] += 1;
+            reverse_graph.entry(dep).or_default().push(i);
         }
     }
 
@@ -168,16 +171,16 @@ fn topological_sort(
         }
     };
 
-    // Start with nodes that have no dependencies
+    // Start with nodes that have no dependencies (in_degree == 0)
     let mut queue: Vec<usize> = (0..n)
         .filter(|&i| in_degree[i] == 0)
         .collect();
 
-    // Sort queue by priority and then alphabetically for deterministic results
+    // Sort queue by priority (descending) so lowest priority pops last from the end
     queue.sort_by(|&a, &b| {
-        let priority_cmp = get_priority(&plugins[a]).cmp(&get_priority(&plugins[b]));
+        let priority_cmp = get_priority(&plugins[b]).cmp(&get_priority(&plugins[a]));
         if priority_cmp == std::cmp::Ordering::Equal {
-            plugins[a].filename.to_lowercase().cmp(&plugins[b].filename.to_lowercase())
+            plugins[b].filename.to_lowercase().cmp(&plugins[a].filename.to_lowercase())
         } else {
             priority_cmp
         }
@@ -186,17 +189,17 @@ fn topological_sort(
     while let Some(current) = queue.pop() {
         sorted.push(current);
 
-        // Process nodes that depend on current
-        if let Some(deps) = graph.get(&current) {
-            for &dependent in deps {
+        // Process nodes that depend on current (current is now resolved)
+        if let Some(dependents) = reverse_graph.get(&current) {
+            for &dependent in dependents {
                 in_degree[dependent] -= 1;
                 if in_degree[dependent] == 0 {
-                    // Insert in sorted position based on priority
+                    // Insert in sorted position (descending priority so pop gives lowest)
                     let pos = queue
                         .binary_search_by(|&probe| {
                             let priority_cmp = get_priority(&plugins[probe])
                                 .cmp(&get_priority(&plugins[dependent]))
-                                .reverse(); // Reverse for descending order
+                                .reverse();
                             if priority_cmp == std::cmp::Ordering::Equal {
                                 plugins[probe]
                                     .filename

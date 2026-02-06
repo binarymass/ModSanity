@@ -71,6 +71,7 @@ pub struct InstalledMod {
     pub priority: i32,
 
     pub nexus_mod_id: Option<i64>,
+    pub nexus_file_id: Option<i64>,
     pub file_count: i32,
     pub install_path: PathBuf,
     pub category_id: Option<i64>,
@@ -86,6 +87,7 @@ impl From<ModRecord> for InstalledMod {
             enabled: r.enabled,
             priority: r.priority,
             nexus_mod_id: r.nexus_mod_id,
+            nexus_file_id: r.nexus_file_id,
             file_count: r.file_count,
             install_path: PathBuf::from(r.install_path),
             category_id: r.category_id,
@@ -215,8 +217,8 @@ impl ModManager {
             version: version.clone(),
             author: None,
             description: None,
-            nexus_mod_id: None,
-            nexus_file_id: None,
+            nexus_mod_id,
+            nexus_file_id,
             install_path: staging.to_string_lossy().to_string(),
             enabled: true,
             priority: self.next_priority(game_id).await?,
@@ -249,7 +251,8 @@ impl ModManager {
             author: None,
             enabled: true,
             priority: record.priority,
-            nexus_mod_id: None,
+            nexus_mod_id,
+            nexus_file_id,
             file_count: file_records.len() as i32,
             install_path: staging,
             category_id: None,
@@ -293,7 +296,7 @@ impl ModManager {
         &self,
         context: &FomodInstallContext,
         wizard: &fomod::WizardState,
-        progress_callback: Option<ProgressCallback>,
+        _progress_callback: Option<ProgressCallback>,
     ) -> Result<InstalledMod> {
         use fomod::{executor::FomodExecutor, planner::InstallPlan};
 
@@ -414,6 +417,7 @@ impl ModManager {
             enabled: true,
             priority: context.priority,
             nexus_mod_id: None,
+            nexus_file_id: None,
             file_count: file_records.len() as i32,
             install_path: target_path,
             category_id: None,
@@ -450,7 +454,7 @@ impl ModManager {
         game_id: &str,
         mod_name: &str,
     ) -> Result<Vec<(String, String)>> {
-        use crate::plugins::{self, masterlist::{load_masterlist, build_metadata_map, get_requirements}};
+        use crate::plugins::masterlist::{build_metadata_map, get_requirements, load_masterlist};
         use std::path::Path;
 
         // Load masterlist
@@ -464,7 +468,7 @@ impl ModManager {
         };
 
         // Get mod's install path
-        let mod_record = self.db.get_mod(game_id, mod_name)?
+        let _mod_record = self.db.get_mod(game_id, mod_name)?
             .ok_or_else(|| anyhow::anyhow!("Mod '{}' not found", mod_name))?;
 
         let staging = self.staging_dir(game_id).await.join(mod_name);
@@ -1114,4 +1118,3 @@ async fn move_contents(from: &Path, to: &Path) -> Result<()> {
     }
     Ok(())
 }
-

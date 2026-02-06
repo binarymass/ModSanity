@@ -6,10 +6,11 @@ pub mod screens;
 
 use crate::app::{App, InputMode, Screen};
 use crate::app::state::AppState;
+use crate::db::Database;
 use crate::plugins;
 use anyhow::Result;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers, MouseEvent, MouseEventKind, MouseButton},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -109,6 +110,40 @@ impl Tui {
             if let Ok(profiles) = app.profiles.list_profiles(&game.id).await {
                 let mut state = app.state.write().await;
                 state.profiles = profiles;
+            }
+
+            // Load catalog browse data if catalog is populated
+            let game_domain = match game.id.as_str() {
+                "skyrimse" | "skyrimvr" => "skyrimspecialedition",
+                id => id,
+            };
+
+            if let Ok(sync_state) = app.db.get_sync_state(game_domain) {
+                let total_mods = app.db.count_catalog_mods(game_domain).unwrap_or(0);
+                let mut state = app.state.write().await;
+                state.catalog_game_domain = game_domain.to_string();
+                state.catalog_sync_state = Some(crate::app::state::CatalogSyncStatus {
+                    current_page: sync_state.current_page,
+                    completed: sync_state.completed,
+                    last_sync: sync_state.last_sync,
+                    last_error: sync_state.last_error,
+                    total_mods,
+                });
+                state.catalog_total_count = total_mods;
+
+                if sync_state.completed && total_mods > 0 {
+                    if let Ok(results) = app.db.list_catalog_mods(game_domain, 0, 100) {
+                        state.catalog_browse_results = results;
+                        state.catalog_browse_offset = 0;
+                        state.selected_catalog_index = 0;
+                    }
+                }
+            }
+
+            // Load saved modlists
+            if let Ok(modlists) = app.db.get_modlists_for_game(&game.id) {
+                let mut state = app.state.write().await;
+                state.saved_modlists = modlists;
             }
         }
 
@@ -231,6 +266,253 @@ impl Tui {
         });
     }
 
+    fn spawn_load_modlist(
+        state: Arc<RwLock<AppState>>,
+        db: Arc<Database>,
+        path: String,
+    ) {
+        tokio::spawn(async move {
+
+            // Detect format
+            let format = match crate::import::detect_format(std::path::Path::new(&path)) {
+                Ok(f) => f,
+                Err(e) => {
+                    let mut state = state.write().await;
+                    state.set_status_error(format!("Error reading file: {}", e));
+                    return;
+                }
+            };
+
+            match format {
+                crate::import::ModlistFormat::Native => {
+                    // Load native modlist
+                    let modlist = match crate::import::modlist_format::load_native(std::path::Path::new(&path)) {
+                        Ok(m) => m,
+                        Err(e) => {
+                            let mut state = state.write().await;
+                            state.set_status_error(format!("Parse error: {}", e));
+                            return;
+                        }
+                    };
+
+                    // Get game_id
+                    let game_id = {
+                        let state = state.read().await;
+                        state.active_game.as_ref().map(|g| g.id.clone())
+                    };
+
+                    let game_id = match game_id {
+                        Some(id) => id,
+                        None => {
+                            let mut state = state.write().await;
+                            state.set_status_error("No active game selected");
+                            return;
+                        }
+                    };
+
+                    // Validate game match
+                    if modlist.meta.game_id != game_id {
+                        let mut state = state.write().await;
+                        state.set_status_error(format!(
+                            "Modlist is for {} but active game is {}",
+                            modlist.meta.game_id, game_id
+                        ));
+                        return;
+                    }
+
+                    // Library check
+                    let check_result = match crate::import::library_check::check_library(
+                        &db,
+                        &game_id,
+                        modlist.mods,
+                    ) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            let mut state = state.write().await;
+                            state.set_status_error(format!("Library check error: {}", e));
+                            return;
+                        }
+                    };
+
+                    // Prepare review data
+                    let review = crate::app::state::ModlistReviewData {
+                        source_path: path,
+                        format: "Native JSON".to_string(),
+                        total_mods: check_result.already_installed.len() + check_result.needs_download.len(),
+                        already_installed: check_result.already_installed
+                            .iter()
+                            .map(|(entry, _)| entry.name.clone())
+                            .collect(),
+                        needs_download: check_result.needs_download,
+                        total_plugins: modlist.plugins.len(),
+                    };
+
+                    // Update state
+                    let mut state = state.write().await;
+                    state.modlist_review_data = Some(review);
+                    state.selected_modlist_entry = 0;
+                    state.goto(Screen::ModlistReview);
+                }
+                crate::import::ModlistFormat::Mo2 => {
+                    // Delegate to existing import
+                    let mut state = state.write().await;
+                    state.import_file_path = path;
+                    state.goto(Screen::Import);
+                    state.set_status_info("Use Enter to import MO2 modlist");
+                }
+            }
+        });
+    }
+
+    fn spawn_load_saved_modlist(
+        state: Arc<RwLock<AppState>>,
+        db: Arc<Database>,
+        modlist_id: i64,
+        modlist_name: String,
+    ) {
+        tokio::spawn(async move {
+            let game_id = {
+                let state = state.read().await;
+                state.active_game.as_ref().map(|g| g.id.clone())
+            };
+
+            let game_id = match game_id {
+                Some(id) => id,
+                None => {
+                    let mut state = state.write().await;
+                    state.set_status_error("No active game selected");
+                    return;
+                }
+            };
+
+            let entries = match db.get_modlist_entries(modlist_id) {
+                Ok(entries) => entries,
+                Err(e) => {
+                    let mut state = state.write().await;
+                    state.set_status_error(format!("Failed to read saved modlist entries: {}", e));
+                    return;
+                }
+            };
+
+            if entries.is_empty() {
+                let mut state = state.write().await;
+                state.set_status_error("Saved modlist has no entries");
+                return;
+            }
+
+            let plugin_count = entries.iter().filter(|e| e.plugin_name.is_some()).count();
+            let mod_entries: Vec<crate::import::modlist_format::ModlistEntry> = entries
+                .into_iter()
+                .map(|entry| crate::import::modlist_format::ModlistEntry {
+                    name: entry.name,
+                    version: entry.version.unwrap_or_else(|| "unknown".to_string()),
+                    nexus_mod_id: entry.nexus_mod_id,
+                    nexus_file_id: None,
+                    author: entry.author,
+                    priority: entry.position,
+                    enabled: entry.enabled,
+                    category: None,
+                })
+                .collect();
+
+            let check_result = match crate::import::library_check::check_library(
+                &db,
+                &game_id,
+                mod_entries,
+            ) {
+                Ok(r) => r,
+                Err(e) => {
+                    let mut state = state.write().await;
+                    state.set_status_error(format!("Library check error: {}", e));
+                    return;
+                }
+            };
+
+            let review = crate::app::state::ModlistReviewData {
+                source_path: format!("saved: {}", modlist_name),
+                format: "Saved Modlist".to_string(),
+                total_mods: check_result.already_installed.len() + check_result.needs_download.len(),
+                already_installed: check_result
+                    .already_installed
+                    .iter()
+                    .map(|(entry, _)| entry.name.clone())
+                    .collect(),
+                needs_download: check_result.needs_download,
+                total_plugins: plugin_count,
+            };
+
+            let mut state = state.write().await;
+            state.modlist_picker_for_loading = false;
+            state.modlist_review_data = Some(review);
+            state.selected_modlist_entry = 0;
+            state.goto(Screen::ModlistReview);
+            state.set_status_success("Loaded saved modlist for review");
+        });
+    }
+
+    fn spawn_queue_modlist_downloads(
+        state: Arc<RwLock<AppState>>,
+        db: Arc<Database>,
+    ) {
+        tokio::spawn(async move {
+            // Get review data
+            let (needs_download, game_id) = {
+                let state = state.read().await;
+                let review = match &state.modlist_review_data {
+                    Some(r) => r,
+                    None => return,
+                };
+                let game_id = match &state.active_game {
+                    Some(g) => g.id.clone(),
+                    None => return,
+                };
+                (review.needs_download.clone(), game_id)
+            };
+
+            let queue_manager = crate::queue::QueueManager::new(db);
+            let batch_id = queue_manager.create_batch();
+
+            let mut queue_position = 0;
+            for entry in &needs_download {
+                let nexus_mod_id = match entry.nexus_mod_id {
+                    Some(id) if id > 0 => id,
+                    _ => continue,
+                };
+
+                let queue_entry = crate::queue::QueueEntry {
+                    id: 0,
+                    batch_id: batch_id.clone(),
+                    game_id: game_id.clone(),
+                    queue_position,
+                    plugin_name: entry.name.clone(),
+                    mod_name: entry.name.clone(),
+                    nexus_mod_id,
+                    selected_file_id: entry.nexus_file_id,
+                    auto_install: true,
+                    match_confidence: Some(1.0),
+                    alternatives: Vec::new(),
+                    status: crate::queue::QueueStatus::Matched,
+                    progress: 0.0,
+                    error: None,
+                };
+
+                if let Err(e) = queue_manager.add_entry(queue_entry) {
+                    let mut state = state.write().await;
+                    state.set_status_error(format!("Error adding to queue: {}", e));
+                    return;
+                }
+
+                queue_position += 1;
+            }
+
+            // Navigate to queue screen
+            let mut state = state.write().await;
+            state.modlist_review_data = None;
+            state.goto(Screen::DownloadQueue);
+            state.set_status_success(format!("Queued {} downloads", queue_position));
+        });
+    }
+
     /// Main event loop
     async fn event_loop(&mut self, app: &mut App) -> Result<()> {
         loop {
@@ -247,8 +529,14 @@ impl Tui {
 
             // Poll for events
             if event::poll(Duration::from_millis(100))? {
-                if let Event::Key(key) = event::read()? {
-                    self.handle_key(app, key.code, key.modifiers).await?;
+                match event::read()? {
+                    Event::Key(key) => {
+                        self.handle_key(app, key.code, key.modifiers).await?;
+                    }
+                    Event::Mouse(mouse) => {
+                        self.handle_mouse(app, mouse).await?;
+                    }
+                    _ => {}
                 }
             }
         }
@@ -757,6 +1045,330 @@ impl Tui {
                 _ => {}
             }
             return Ok(());
+        } else if state.input_mode == InputMode::ImportFilePath {
+            match key {
+                KeyCode::Enter => {
+                    state.input_mode = InputMode::Normal;
+                    let path = state.input_buffer.clone();
+                    state.input_buffer.clear();
+
+                    // Expand ~ to home directory
+                    let expanded_path = if path.starts_with("~/") {
+                        std::env::var("HOME")
+                            .map(|h| format!("{}/{}", h, &path[2..]))
+                            .unwrap_or_else(|_| path.clone())
+                    } else {
+                        path.clone()
+                    };
+
+                    state.import_file_path = expanded_path;
+                    state.set_status("Press Enter to start import");
+                    return Ok(());
+                }
+                KeyCode::Esc => {
+                    state.input_mode = InputMode::Normal;
+                    state.input_buffer.clear();
+                }
+                KeyCode::Backspace => {
+                    state.input_buffer.pop();
+                }
+                KeyCode::Char(c) => {
+                    state.input_buffer.push(c);
+                }
+                _ => {}
+            }
+            return Ok(());
+        } else if state.input_mode == InputMode::SaveModlistPath {
+            match key {
+                KeyCode::Enter => {
+                    state.input_mode = InputMode::Normal;
+                    let path = state.input_buffer.clone();
+                    let format = state.modlist_save_format.clone();
+                    state.input_buffer.clear();
+
+                    // Expand ~ to home directory
+                    let expanded_path = if path.starts_with("~/") {
+                        std::env::var("HOME")
+                            .map(|h| format!("{}/{}", h, &path[2..]))
+                            .unwrap_or_else(|_| path.clone())
+                    } else {
+                        path.clone()
+                    };
+
+                    // Inline the save logic since we need App context
+                    let game = match app.active_game().await {
+                        Some(g) => g,
+                        None => {
+                            let mut state = app.state.write().await;
+                            state.set_status_error("No game selected");
+                            return Ok(());
+                        }
+                    };
+
+                    // Clone what we need for the async task
+                    let state_clone = app.state.clone();
+                    let db_clone = app.db.clone();
+                    let mods_clone = app.mods.clone();
+                    let config_clone = app.config.clone();
+                    let game_id = game.id.clone();
+                    let game_nexus_domain = game.nexus_game_domain();
+
+                    drop(state);
+
+                    // Spawn save task
+                    tokio::spawn(async move {
+                        use crate::import::modlist_format::{ModSanityModlist, ModlistMeta, ModlistEntry, PluginOrderEntry};
+                        use crate::plugins;
+                        use anyhow::Context;
+
+                        let result: anyhow::Result<()> = async {
+                            let out_path = std::path::Path::new(&expanded_path);
+
+                            match format.as_str() {
+                                "native" | "json" => {
+                                    let mods = mods_clone.list_mods(&game_id).await?;
+
+                                    // Get category names
+                                    let categories = db_clone.get_all_categories()?;
+                                    let cat_map: std::collections::HashMap<i64, String> = categories
+                                        .into_iter()
+                                        .filter_map(|c| c.id.map(|id| (id, c.name)))
+                                        .collect();
+
+                                    let mod_entries: Vec<ModlistEntry> = mods.iter().map(|m| {
+                                        ModlistEntry {
+                                            name: m.name.clone(),
+                                            version: m.version.clone(),
+                                            nexus_mod_id: m.nexus_mod_id,
+                                            nexus_file_id: m.nexus_file_id,
+                                            author: m.author.clone(),
+                                            priority: m.priority,
+                                            enabled: m.enabled,
+                                            category: m.category_id.and_then(|id| cat_map.get(&id).cloned()),
+                                        }
+                                    }).collect();
+
+                                    // Get plugins
+                                    let plugin_entries: Vec<PluginOrderEntry> = match plugins::get_plugins(&game) {
+                                        Ok(plist) => plist.iter().map(|p| {
+                                            PluginOrderEntry {
+                                                filename: p.filename.clone(),
+                                                load_order: p.load_order as i32,
+                                                enabled: p.enabled,
+                                            }
+                                        }).collect(),
+                                        Err(_) => Vec::new(),
+                                    };
+
+                                    let profile_name = config_clone.read().await.active_profile.clone();
+
+                                    let modlist = ModSanityModlist {
+                                        meta: ModlistMeta {
+                                            format_version: 1,
+                                            modsanity_version: crate::APP_VERSION.to_string(),
+                                            game_id: game_id.clone(),
+                                            game_domain: game_nexus_domain.clone(),
+                                            exported_at: chrono::Utc::now().to_rfc3339(),
+                                            profile_name,
+                                        },
+                                        mods: mod_entries,
+                                        plugins: plugin_entries,
+                                    };
+
+                                    crate::import::modlist_format::save_native(out_path, &modlist)?;
+                                }
+                                "mo2" => {
+                                    // Write MO2 modlist.txt format (plugin list)
+                                    let plugin_list = match plugins::get_plugins(&game) {
+                                        Ok(plist) => plist,
+                                        Err(e) => anyhow::bail!("Failed to read plugins: {}", e),
+                                    };
+
+                                    let mut lines = Vec::new();
+                                    for plugin in &plugin_list {
+                                        let prefix = if plugin.enabled { "*" } else { "" };
+                                        lines.push(format!("{}{}", prefix, plugin.filename));
+                                    }
+
+                                    std::fs::write(out_path, lines.join("\n"))
+                                        .context("Failed to write MO2 modlist file")?;
+                                }
+                                _ => anyhow::bail!("Unknown format '{}'", format),
+                            }
+
+                            Ok(())
+                        }.await;
+
+                        match result {
+                            Ok(_) => {
+                                let mut state = state_clone.write().await;
+                                state.set_status_success(format!("Modlist saved to {}", expanded_path));
+                            }
+                            Err(e) => {
+                                let mut state = state_clone.write().await;
+                                state.set_status_error(format!("Error saving modlist: {}", e));
+                            }
+                        }
+                    });
+                    return Ok(());
+                }
+                KeyCode::Tab => {
+                    // Toggle format between "native" and "mo2"
+                    state.modlist_save_format = if state.modlist_save_format == "native" {
+                        "mo2".to_string()
+                    } else {
+                        "native".to_string()
+                    };
+                }
+                KeyCode::Esc => {
+                    state.input_mode = InputMode::Normal;
+                    state.input_buffer.clear();
+                }
+                KeyCode::Backspace => {
+                    state.input_buffer.pop();
+                }
+                KeyCode::Char(c) => {
+                    state.input_buffer.push(c);
+                }
+                _ => {}
+            }
+            return Ok(());
+        } else if state.input_mode == InputMode::LoadModlistPath {
+            match key {
+                KeyCode::Enter => {
+                    state.input_mode = InputMode::Normal;
+                    let path = state.input_buffer.clone();
+                    state.input_buffer.clear();
+
+                    // Expand ~ to home directory
+                    let expanded_path = if path.starts_with("~/") {
+                        std::env::var("HOME")
+                            .map(|h| format!("{}/{}", h, &path[2..]))
+                            .unwrap_or_else(|_| path.clone())
+                    } else {
+                        path.clone()
+                    };
+
+                    state.set_status("Loading modlist...");
+                    drop(state);
+
+                    // Spawn load task
+                    let state_clone = app.state.clone();
+                    let db_clone = app.db.clone();
+                    Self::spawn_load_modlist(state_clone, db_clone, expanded_path);
+                    return Ok(());
+                }
+                KeyCode::Esc => {
+                    state.input_mode = InputMode::Normal;
+                    state.input_buffer.clear();
+                }
+                KeyCode::Backspace => {
+                    state.input_buffer.pop();
+                }
+                KeyCode::Char(c) => {
+                    state.input_buffer.push(c);
+                }
+                _ => {}
+            }
+            return Ok(());
+        } else if state.input_mode == InputMode::CatalogSearch {
+            match key {
+                KeyCode::Enter => {
+                    state.input_mode = InputMode::Normal;
+                    let query = state.input_buffer.clone();
+                    state.input_buffer.clear();
+                    state.catalog_search_query = query.clone();
+                    state.selected_catalog_index = 0;
+                    state.catalog_browse_offset = 0;
+
+                    let game_domain = state.catalog_game_domain.clone();
+                    drop(state);
+
+                    if query.is_empty() {
+                        // Load default page
+                        screens::nexus_catalog::load_catalog_page(app, &game_domain, 0, "").await?;
+                    } else {
+                        screens::nexus_catalog::load_catalog_page(app, &game_domain, 0, &query).await?;
+                    }
+                    return Ok(());
+                }
+                KeyCode::Esc => {
+                    state.input_mode = InputMode::Normal;
+                    state.input_buffer.clear();
+                }
+                KeyCode::Backspace => {
+                    state.input_buffer.pop();
+                }
+                KeyCode::Char(c) => {
+                    state.input_buffer.push(c);
+                }
+                _ => {}
+            }
+            return Ok(());
+        } else if state.input_mode == InputMode::ModlistNameInput {
+            match key {
+                KeyCode::Enter => {
+                    state.input_mode = InputMode::Normal;
+                    let name = state.input_buffer.clone();
+                    state.input_buffer.clear();
+                    let active_id = state.active_modlist_id;
+
+                    if !name.is_empty() {
+                        if let Some(game) = &state.active_game {
+                            let game_id = game.id.clone();
+                            drop(state);
+
+                            if let Some(modlist_id) = active_id {
+                                // Rename existing modlist
+                                match app.db.rename_modlist(modlist_id, &name) {
+                                    Ok(_) => {
+                                        if let Ok(lists) = app.db.get_modlists_for_game(&game_id) {
+                                            let mut state = app.state.write().await;
+                                            state.saved_modlists = lists;
+                                            state.active_modlist_id = None;
+                                            state.set_status_success(format!("Renamed modlist to: {}", name));
+                                        }
+                                    }
+                                    Err(e) => {
+                                        let mut state = app.state.write().await;
+                                        state.active_modlist_id = None;
+                                        state.set_status_error(format!("Error: {}", e));
+                                    }
+                                }
+                            } else {
+                                // Create new modlist
+                                match app.db.create_modlist(&game_id, &name, None, None) {
+                                    Ok(_) => {
+                                        if let Ok(lists) = app.db.get_modlists_for_game(&game_id) {
+                                            let mut state = app.state.write().await;
+                                            state.saved_modlists = lists;
+                                            state.set_status_success(format!("Created modlist: {}", name));
+                                        }
+                                    }
+                                    Err(e) => {
+                                        let mut state = app.state.write().await;
+                                        state.set_status_error(format!("Error: {}", e));
+                                    }
+                                }
+                            }
+                            return Ok(());
+                        }
+                    }
+                    return Ok(());
+                }
+                KeyCode::Esc => {
+                    state.input_mode = InputMode::Normal;
+                    state.input_buffer.clear();
+                }
+                KeyCode::Backspace => {
+                    state.input_buffer.pop();
+                }
+                KeyCode::Char(c) => {
+                    state.input_buffer.push(c);
+                }
+                _ => {}
+            }
+            return Ok(());
         } else if state.input_mode == InputMode::FomodComponentSelection {
             match key {
                 KeyCode::Up | KeyCode::Char('k') => {
@@ -920,6 +1532,33 @@ impl Tui {
             (KeyCode::F(4), _) => {
                 state.goto(Screen::Settings);
             }
+            (KeyCode::F(5), _) => {
+                state.goto(Screen::Import);
+            }
+            (KeyCode::F(6), _) => {
+                state.goto(Screen::DownloadQueue);
+            }
+            (KeyCode::F(7), _) => {
+                state.goto(Screen::NexusCatalog);
+            }
+            (KeyCode::F(8), _) => {
+                // Load saved modlists before navigating
+                if let Some(game) = &state.active_game {
+                    let game_id = game.id.clone();
+                    drop(state);
+                    if let Ok(lists) = app.db.get_modlists_for_game(&game_id) {
+                        let mut state = app.state.write().await;
+                        state.saved_modlists = lists;
+                        state.selected_saved_modlist_index = 0;
+                        state.modlist_editor_mode = crate::app::state::ModlistEditorMode::ListPicker;
+                        state.modlist_picker_for_loading = false;
+                        state.goto(Screen::ModlistEditor);
+                    }
+                    return Ok(());
+                } else {
+                    state.set_status_error("No game selected");
+                }
+            }
             (KeyCode::Char('?'), _) => {
                 state.show_help = !state.show_help;
             }
@@ -939,6 +1578,203 @@ impl Tui {
                 drop(state);
                 self.handle_screen_key(app, key, modifiers).await?;
             }
+        }
+
+        Ok(())
+    }
+
+    /// Handle mouse events
+    async fn handle_mouse(&self, app: &mut App, mouse: MouseEvent) -> Result<()> {
+        let mut state = app.state.write().await;
+
+        // Skip mouse handling when in input mode
+        if state.input_mode != InputMode::Normal {
+            return Ok(());
+        }
+
+        match mouse.kind {
+            MouseEventKind::ScrollDown => {
+                // Increment appropriate selected index based on current screen
+                match state.current_screen {
+                    Screen::Mods | Screen::Dashboard => {
+                        let count = state.installed_mods.len();
+                        if count > 0 && state.selected_mod_index < count - 1 {
+                            state.selected_mod_index += 1;
+                        }
+                    }
+                    Screen::Plugins => {
+                        let count = state.plugins.len();
+                        if count > 0 && state.selected_plugin_index < count - 1 {
+                            state.selected_plugin_index += 1;
+                        }
+                    }
+                    Screen::Profiles => {
+                        let count = state.profiles.len();
+                        if count > 0 && state.selected_profile_index < count - 1 {
+                            state.selected_profile_index += 1;
+                        }
+                    }
+                    Screen::Settings => {
+                        // Settings has 4 items (0-3)
+                        if state.selected_setting_index < 3 {
+                            state.selected_setting_index += 1;
+                        }
+                    }
+                    Screen::Browse => {
+                        let count = state.browse_results.len();
+                        if count > 0 && state.selected_browse_index < count - 1 {
+                            state.selected_browse_index += 1;
+                        }
+                    }
+                    Screen::GameSelect => {
+                        // Games are on the App, not state; just increment
+                        state.selected_game_index += 1;
+                    }
+                    Screen::ImportReview => {
+                        let count = state.import_results.len();
+                        if count > 0 && state.selected_import_index < count - 1 {
+                            state.selected_import_index += 1;
+                        }
+                    }
+                    Screen::DownloadQueue => {
+                        let count = state.queue_entries.len();
+                        if count > 0 && state.selected_queue_index < count - 1 {
+                            state.selected_queue_index += 1;
+                        }
+                    }
+                    Screen::NexusCatalog => {
+                        let count = state.catalog_browse_results.len();
+                        if count > 0 && state.selected_catalog_index < count - 1 {
+                            state.selected_catalog_index += 1;
+                        }
+                    }
+                    Screen::ModlistEditor => {
+                        match state.modlist_editor_mode {
+                            crate::app::state::ModlistEditorMode::ListPicker => {
+                                let count = state.saved_modlists.len();
+                                if count > 0 && state.selected_saved_modlist_index < count - 1 {
+                                    state.selected_saved_modlist_index += 1;
+                                }
+                            }
+                            crate::app::state::ModlistEditorMode::EntryEditor => {
+                                let count = state.modlist_editor_entries.len();
+                                if count > 0 && state.selected_modlist_editor_index < count - 1 {
+                                    state.selected_modlist_editor_index += 1;
+                                }
+                            }
+                        }
+                    }
+                    Screen::LoadOrder => {
+                        let count = state.load_order_mods.len();
+                        if count > 0 && state.load_order_index < count - 1 {
+                            state.load_order_index += 1;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            MouseEventKind::ScrollUp => {
+                match state.current_screen {
+                    Screen::Mods | Screen::Dashboard => {
+                        if state.selected_mod_index > 0 {
+                            state.selected_mod_index -= 1;
+                        }
+                    }
+                    Screen::Plugins => {
+                        if state.selected_plugin_index > 0 {
+                            state.selected_plugin_index -= 1;
+                        }
+                    }
+                    Screen::Profiles => {
+                        if state.selected_profile_index > 0 {
+                            state.selected_profile_index -= 1;
+                        }
+                    }
+                    Screen::Settings => {
+                        if state.selected_setting_index > 0 {
+                            state.selected_setting_index -= 1;
+                        }
+                    }
+                    Screen::Browse => {
+                        if state.selected_browse_index > 0 {
+                            state.selected_browse_index -= 1;
+                        }
+                    }
+                    Screen::GameSelect => {
+                        if state.selected_game_index > 0 {
+                            state.selected_game_index -= 1;
+                        }
+                    }
+                    Screen::ImportReview => {
+                        if state.selected_import_index > 0 {
+                            state.selected_import_index -= 1;
+                        }
+                    }
+                    Screen::DownloadQueue => {
+                        if state.selected_queue_index > 0 {
+                            state.selected_queue_index -= 1;
+                        }
+                    }
+                    Screen::NexusCatalog => {
+                        if state.selected_catalog_index > 0 {
+                            state.selected_catalog_index -= 1;
+                        }
+                    }
+                    Screen::ModlistEditor => {
+                        match state.modlist_editor_mode {
+                            crate::app::state::ModlistEditorMode::ListPicker => {
+                                if state.selected_saved_modlist_index > 0 {
+                                    state.selected_saved_modlist_index -= 1;
+                                }
+                            }
+                            crate::app::state::ModlistEditorMode::EntryEditor => {
+                                if state.selected_modlist_editor_index > 0 {
+                                    state.selected_modlist_editor_index -= 1;
+                                }
+                            }
+                        }
+                    }
+                    Screen::LoadOrder => {
+                        if state.load_order_index > 0 {
+                            state.load_order_index -= 1;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            MouseEventKind::Down(MouseButton::Left) => {
+                // Check if click is on tab bar row (row 3, 0-indexed)
+                // Tab bar is at row 3 (after 3-line header)
+                if mouse.row == 3 {
+                    // Map column position to tab index
+                    // Tabs: "F1 Mods|F2 Plugins|F3 Profiles|F4 Settings|F5 Import|F6 Queue|F7 Catalog|F8 Modlists"
+                    let col = mouse.column as usize;
+                    let screen = if col < 8 {
+                        Some(Screen::Mods)
+                    } else if col < 19 {
+                        Some(Screen::Plugins)
+                    } else if col < 31 {
+                        Some(Screen::Profiles)
+                    } else if col < 43 {
+                        Some(Screen::Settings)
+                    } else if col < 53 {
+                        Some(Screen::Import)
+                    } else if col < 62 {
+                        Some(Screen::DownloadQueue)
+                    } else if col < 73 {
+                        Some(Screen::NexusCatalog)
+                    } else if col < 85 {
+                        Some(Screen::ModlistEditor)
+                    } else {
+                        None
+                    };
+
+                    if let Some(target) = screen {
+                        state.goto(target);
+                    }
+                }
+            }
+            _ => {}
         }
 
         Ok(())
@@ -1700,6 +2536,37 @@ impl Tui {
                             return Ok(());
                         }
                     }
+                    KeyCode::Char('S') => {
+                        // Save modlist
+                        state.input_mode = InputMode::SaveModlistPath;
+                        state.input_buffer = String::from("~/modlist.json");
+                        state.modlist_save_format = "native".to_string();
+                    }
+                    KeyCode::Char('L') => {
+                        // Load modlist (saved modlist picker first)
+                        if let Some(game) = &state.active_game {
+                            let game_id = game.id.clone();
+                            drop(state);
+                            match app.db.get_modlists_for_game(&game_id) {
+                                Ok(lists) => {
+                                    let mut state = app.state.write().await;
+                                    state.saved_modlists = lists;
+                                    state.selected_saved_modlist_index = 0;
+                                    state.modlist_editor_mode = crate::app::state::ModlistEditorMode::ListPicker;
+                                    state.modlist_picker_for_loading = true;
+                                    state.goto(Screen::ModlistEditor);
+                                    state.set_status_info("Select saved modlist to load, or press 'f' for file path");
+                                }
+                                Err(e) => {
+                                    let mut state = app.state.write().await;
+                                    state.set_status_error(format!("Failed to load saved modlists: {}", e));
+                                }
+                            }
+                            return Ok(());
+                        } else {
+                            state.set_status_error("No game selected");
+                        }
+                    }
                     KeyCode::Left => {
                         // Navigate to previous category
                         if state.category_filter.is_none() {
@@ -1839,7 +2706,7 @@ impl Tui {
                             return Ok(());
                         }
                     }
-                    KeyCode::Char('A') | KeyCode::Char('a') => {
+                    KeyCode::Char('A') => {
                         // Auto-categorize only uncategorized mods
                         if let Some(game) = &state.active_game {
                             let game_id = game.id.clone();
@@ -2164,7 +3031,7 @@ impl Tui {
                             let status = if p.enabled { "Enabled" } else { "Disabled" };
                             let filename = p.filename.clone();
                             let path = p.path.clone();
-                            drop(p);
+                            let _ = p;
 
                             // Warn if enabling a non-existent plugin
                             if !was_enabled && !path.exists() {
@@ -2406,6 +3273,40 @@ impl Tui {
                                 state.input_buffer = config.nexus_api_key
                                     .clone()
                                     .unwrap_or_default();
+                            }
+                            1 => {
+                                // Cycle deployment method
+                                {
+                                    let mut config = app.config.write().await;
+                                    config.deployment.method = match config.deployment.method {
+                                        crate::config::DeploymentMethod::Symlink => crate::config::DeploymentMethod::Hardlink,
+                                        crate::config::DeploymentMethod::Hardlink => crate::config::DeploymentMethod::Copy,
+                                        crate::config::DeploymentMethod::Copy => crate::config::DeploymentMethod::Symlink,
+                                    };
+                                    if let Err(e) = config.save().await {
+                                        state.set_status(format!("Error saving config: {}", e));
+                                        return Ok(());
+                                    }
+                                    state.set_status(format!(
+                                        "Deployment method: {}",
+                                        config.deployment.method.display_name()
+                                    ));
+                                }
+                            }
+                            2 => {
+                                // Toggle backup originals
+                                {
+                                    let mut config = app.config.write().await;
+                                    config.deployment.backup_originals = !config.deployment.backup_originals;
+                                    if let Err(e) = config.save().await {
+                                        state.set_status(format!("Error saving config: {}", e));
+                                        return Ok(());
+                                    }
+                                    state.set_status(format!(
+                                        "Backup originals: {}",
+                                        if config.deployment.backup_originals { "enabled" } else { "disabled" }
+                                    ));
+                                }
                             }
                             3 => {
                                 // Default Mod Directory setting
@@ -2827,9 +3728,521 @@ impl Tui {
                 }
             }
 
+            Screen::Import => {
+                match key {
+                    KeyCode::Char('i') => {
+                        // Enter file path input mode
+                        state.input_mode = InputMode::ImportFilePath;
+                        state.input_buffer = state.import_file_path.clone();
+                    }
+                    KeyCode::Enter => {
+                        // Start import
+                        if !state.import_file_path.is_empty() {
+                            let path = state.import_file_path.clone();
+                            let game = state.active_game.clone();
+                            let nexus = app.nexus.clone();
+                            let state_clone = app.state.clone();
+                            let db_clone = app.db.clone();
+
+                            state.set_status("Importing modlist...");
+                            drop(state);
+
+                            if let Some(game) = game {
+                                if let Some(nexus) = nexus {
+                                    // Spawn import in background to avoid blocking UI
+                                    tokio::spawn(async move {
+                                        use crate::import::ModlistImporter;
+                                        use crate::app::state::ImportProgress;
+
+                                        let db_for_modlist = db_clone.clone();
+                                        let importer = ModlistImporter::with_catalog(&game.id, (*nexus).clone(), Some(db_clone));
+
+                                        // Progress callback to update UI
+                                        let state_for_progress = state_clone.clone();
+                                        let progress_callback = move |current: usize, total: usize, plugin_name: &str| {
+                                            if let Ok(mut state) = state_for_progress.try_write() {
+                                                state.import_progress = Some(ImportProgress {
+                                                    current_index: current,
+                                                    total_plugins: total,
+                                                    current_plugin_name: plugin_name.to_string(),
+                                                    stage: if current == 0 {
+                                                        "Parsing".to_string()
+                                                    } else {
+                                                        "Matching".to_string()
+                                                    },
+                                                });
+                                            }
+                                        };
+
+                                        match importer.import_modlist_with_progress(std::path::Path::new(&path), Some(progress_callback)).await {
+                                            Ok(result) => {
+                                                // Save modlist to DB for persistence
+                                                let modlist_name = std::path::Path::new(&path)
+                                                    .file_stem()
+                                                    .and_then(|s| s.to_str())
+                                                    .unwrap_or("Imported Modlist")
+                                                    .to_string();
+
+                                                if let Ok(modlist_id) = db_for_modlist.create_modlist(
+                                                    &game.id,
+                                                    &modlist_name,
+                                                    None,
+                                                    Some(&path),
+                                                ) {
+                                                    let entries: Vec<crate::db::ModlistEntryRecord> = result.matches.iter().enumerate().map(|(i, m)| {
+                                                        crate::db::ModlistEntryRecord {
+                                                            id: None,
+                                                            modlist_id,
+                                                            name: m.mod_name.clone(),
+                                                            nexus_mod_id: m.best_match.as_ref().map(|bm| bm.mod_id),
+                                                            plugin_name: Some(m.plugin.plugin_name.clone()),
+                                                            match_confidence: Some(m.confidence.score()),
+                                                            position: i as i32,
+                                                            enabled: true,
+                                                            author: m.best_match.as_ref().map(|bm| bm.author.clone()),
+                                                            version: m.best_match.as_ref().map(|bm| bm.version.clone()),
+                                                        }
+                                                    }).collect();
+
+                                                    if let Err(e) = db_for_modlist.add_modlist_entries_batch(modlist_id, &entries) {
+                                                        tracing::warn!("Failed to save modlist entries: {}", e);
+                                                    }
+                                                }
+
+                                                let mut state = state_clone.write().await;
+                                                let count = result.matches.len();
+                                                state.import_results = result.matches;
+                                                state.selected_import_index = 0;
+                                                state.import_progress = None; // Clear progress
+                                                state.goto(Screen::ImportReview);
+                                                state.set_status(format!("Found {} plugins (saved to modlists)", count));
+                                            }
+                                            Err(e) => {
+                                                let mut state = state_clone.write().await;
+                                                state.import_progress = None; // Clear progress on error
+                                                state.set_status(format!("Import failed: {}", e));
+                                            }
+                                        }
+                                    });
+                                } else {
+                                    let mut state = app.state.write().await;
+                                    state.set_status("NexusMods API key required");
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            Screen::ImportReview => {
+                let result_count = state.import_results.len();
+                match key {
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        if state.selected_import_index > 0 {
+                            state.selected_import_index -= 1;
+                        }
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        if result_count > 0 && state.selected_import_index < result_count - 1 {
+                            state.selected_import_index += 1;
+                        }
+                    }
+                    KeyCode::Enter => {
+                        // Create download queue
+                        let results = state.import_results.clone();
+                        let game = state.active_game.clone();
+                        drop(state);
+
+                        if let Some(game) = game {
+                            use crate::queue::QueueManager;
+
+                            let queue_manager = QueueManager::new(app.db.clone());
+                            let batch_id = queue_manager.create_batch();
+
+                            let mut queue_position = 0;
+                            for result in &results {
+                                let alternatives = result.alternatives.iter().map(|alt| {
+                                    crate::queue::QueueAlternative {
+                                        mod_id: alt.mod_id,
+                                        name: alt.name.clone(),
+                                        summary: alt.summary.clone(),
+                                        downloads: alt.downloads,
+                                        score: alt.score,
+                                        thumbnail_url: None,
+                                    }
+                                }).collect();
+
+                                let (mod_name, nexus_mod_id, status) = if let Some(best_match) = &result.best_match {
+                                    (
+                                        best_match.name.clone(),
+                                        best_match.mod_id,
+                                        if result.confidence.is_high() {
+                                            crate::queue::QueueStatus::Matched
+                                        } else {
+                                            crate::queue::QueueStatus::NeedsReview
+                                        }
+                                    )
+                                } else {
+                                    // No match found - add entry with NeedsManual status
+                                    (
+                                        result.mod_name.clone(),
+                                        0,
+                                        crate::queue::QueueStatus::NeedsManual
+                                    )
+                                };
+
+                                let entry = crate::queue::QueueEntry {
+                                    id: 0,
+                                    batch_id: batch_id.clone(),
+                                    game_id: game.id.clone(),
+                                    queue_position,
+                                    plugin_name: result.plugin.plugin_name.clone(),
+                                    mod_name,
+                                    nexus_mod_id,
+                                    selected_file_id: None,
+                                    auto_install: true,
+                                    match_confidence: Some(result.confidence.score()),
+                                    alternatives,
+                                    status,
+                                    progress: 0.0,
+                                    error: None,
+                                };
+
+                                if let Ok(_) = queue_manager.add_entry(entry) {
+                                    queue_position += 1;
+                                }
+                            }
+
+                            let mut state = app.state.write().await;
+                            state.import_batch_id = Some(batch_id.clone());
+                            state.goto(Screen::DownloadQueue);
+                            state.set_status(format!("Created queue with {} entries (batch: {})", queue_position, batch_id));
+
+                            // Load queue entries
+                            if let Ok(entries) = queue_manager.get_batch(&batch_id) {
+                                state.queue_entries = entries;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            Screen::ModlistReview => {
+                match key {
+                    KeyCode::Char('j') | KeyCode::Down => {
+                        if let Some(review) = &state.modlist_review_data {
+                            state.selected_modlist_entry =
+                                (state.selected_modlist_entry + 1).min(review.needs_download.len().saturating_sub(1));
+                        }
+                    }
+                    KeyCode::Char('k') | KeyCode::Up => {
+                        state.selected_modlist_entry = state.selected_modlist_entry.saturating_sub(1);
+                    }
+                    KeyCode::Enter => {
+                        // Confirm and queue downloads
+                        if let Some(review) = &state.modlist_review_data {
+                            if review.needs_download.is_empty() {
+                                state.set_status_success("All mods already installed!");
+                                state.modlist_review_data = None;
+                                state.go_back();
+                            } else {
+                                state.set_status("Queueing downloads...");
+                                drop(state);
+                                Self::spawn_queue_modlist_downloads(app.state.clone(), app.db.clone());
+                            }
+                        }
+                    }
+                    KeyCode::Esc => {
+                        state.modlist_review_data = None;
+                        state.go_back();
+                    }
+                    _ => {}
+                }
+            }
+
+            Screen::DownloadQueue => {
+                let entry_count = state.queue_entries.len();
+                match key {
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        if state.selected_queue_index > 0 {
+                            state.selected_queue_index -= 1;
+                        }
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        if entry_count > 0 && state.selected_queue_index < entry_count - 1 {
+                            state.selected_queue_index += 1;
+                        }
+                    }
+                    KeyCode::Char('p') => {
+                        // Process queue
+                        if let Some(batch_id) = state.import_batch_id.clone() {
+                            if let Some(game) = state.active_game.clone() {
+                                if let Some(nexus) = app.nexus.clone() {
+                                    state.queue_processing = true;
+                                    drop(state);
+
+                                    use crate::queue::QueueProcessor;
+                                    let config = app.config.read().await;
+                                    let download_dir = config.paths.downloads_dir();
+                                    drop(config);
+
+                                    let processor = QueueProcessor::new(
+                                        app.db.clone(),
+                                        (*nexus).clone(),
+                                        game.nexus_game_domain(),
+                                        game.id.clone(),
+                                        download_dir,
+                                        app.mods.clone(),
+                                    );
+
+                                    tokio::spawn(async move {
+                                        if let Err(e) = processor.process_batch(&batch_id, false).await {
+                                            tracing::error!("Queue processing error: {}", e);
+                                        }
+                                    });
+
+                                    let mut state = app.state.write().await;
+                                    state.set_status("Processing queue...");
+                                } else {
+                                    state.set_status("NexusMods API key required");
+                                }
+                            }
+                        }
+                    }
+                    KeyCode::Char('c') => {
+                        // Clear queue
+                        if let Some(batch_id) = state.import_batch_id.clone() {
+                            drop(state);
+
+                            use crate::queue::QueueManager;
+                            let queue_manager = QueueManager::new(app.db.clone());
+
+                            if let Ok(_) = queue_manager.clear_batch(&batch_id) {
+                                let mut state = app.state.write().await;
+                                state.queue_entries.clear();
+                                state.import_batch_id = None;
+                                state.set_status("Queue cleared");
+                            }
+                        }
+                    }
+                    KeyCode::Char('r') => {
+                        // Refresh queue
+                        if let Some(batch_id) = state.import_batch_id.clone() {
+                            drop(state);
+
+                            use crate::queue::QueueManager;
+                            let queue_manager = QueueManager::new(app.db.clone());
+
+                            if let Ok(entries) = queue_manager.get_batch(&batch_id) {
+                                let mut state = app.state.write().await;
+                                state.queue_entries = entries;
+                                state.set_status("Queue refreshed");
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            Screen::NexusCatalog => {
+                drop(state);
+                screens::nexus_catalog::handle_input(app, key).await?;
+            }
+
+            Screen::ModlistEditor => {
+                use crate::app::state::ModlistEditorMode;
+
+                match state.modlist_editor_mode {
+                    ModlistEditorMode::ListPicker => {
+                        let list_count = state.saved_modlists.len();
+                        match key {
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if list_count > 0 && state.selected_saved_modlist_index < list_count - 1 {
+                                    state.selected_saved_modlist_index += 1;
+                                }
+                            }
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if state.selected_saved_modlist_index > 0 {
+                                    state.selected_saved_modlist_index -= 1;
+                                }
+                            }
+                            KeyCode::Enter => {
+                                // Open selected modlist (editor mode) or load it (load mode)
+                                if let Some(ml) = state.saved_modlists.get(state.selected_saved_modlist_index) {
+                                    let ml_id = ml.id.unwrap();
+                                    let ml_name = ml.name.clone();
+                                    let load_mode = state.modlist_picker_for_loading;
+                                    drop(state);
+                                    if load_mode {
+                                        Self::spawn_load_saved_modlist(
+                                            app.state.clone(),
+                                            app.db.clone(),
+                                            ml_id,
+                                            ml_name,
+                                        );
+                                    } else if let Ok(entries) = app.db.get_modlist_entries(ml_id) {
+                                        let mut state = app.state.write().await;
+                                        state.modlist_editor_entries = entries;
+                                        state.selected_modlist_editor_index = 0;
+                                        state.active_modlist_id = Some(ml_id);
+                                        state.modlist_editor_mode = ModlistEditorMode::EntryEditor;
+                                    }
+                                    return Ok(());
+                                }
+                            }
+                            KeyCode::Char('f') => {
+                                // Fallback to file-path modlist loading
+                                state.modlist_picker_for_loading = false;
+                                state.input_mode = InputMode::LoadModlistPath;
+                                state.input_buffer = String::from("~/modlist.json");
+                            }
+                            KeyCode::Char('n') => {
+                                // Create new modlist
+                                state.input_mode = InputMode::ModlistNameInput;
+                                state.input_buffer.clear();
+                            }
+                            KeyCode::Char('d') => {
+                                // Delete selected modlist
+                                if let Some(ml) = state.saved_modlists.get(state.selected_saved_modlist_index) {
+                                    let ml_id = ml.id.unwrap();
+                                    let ml_name = ml.name.clone();
+                                    let game_id = state.active_game.as_ref().map(|g| g.id.clone());
+                                    drop(state);
+                                    if let Err(e) = app.db.delete_modlist(ml_id) {
+                                        let mut state = app.state.write().await;
+                                        state.set_status_error(format!("Delete failed: {}", e));
+                                    } else if let Some(game_id) = game_id {
+                                        if let Ok(lists) = app.db.get_modlists_for_game(&game_id) {
+                                            let mut state = app.state.write().await;
+                                            state.saved_modlists = lists;
+                                            state.selected_saved_modlist_index = 0;
+                                            state.set_status_success(format!("Deleted modlist: {}", ml_name));
+                                        }
+                                    }
+                                    return Ok(());
+                                }
+                            }
+                            KeyCode::Char('r') => {
+                                // Rename selected modlist
+                                if let Some(ml) = state.saved_modlists.get(state.selected_saved_modlist_index) {
+                                    let name = ml.name.clone();
+                                    let id = ml.id;
+                                    state.input_mode = InputMode::ModlistNameInput;
+                                    state.input_buffer = name;
+                                    state.active_modlist_id = id;
+                                }
+                            }
+                            KeyCode::Esc => {
+                                state.modlist_picker_for_loading = false;
+                                state.go_back();
+                            }
+                            _ => {}
+                        }
+                    }
+                    ModlistEditorMode::EntryEditor => {
+                        let entry_count = state.modlist_editor_entries.len();
+                        match key {
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if entry_count > 0 && state.selected_modlist_editor_index < entry_count - 1 {
+                                    state.selected_modlist_editor_index += 1;
+                                }
+                            }
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                if state.selected_modlist_editor_index > 0 {
+                                    state.selected_modlist_editor_index -= 1;
+                                }
+                            }
+                            KeyCode::Char(' ') => {
+                                // Toggle enabled
+                                let idx = state.selected_modlist_editor_index;
+                                if idx < state.modlist_editor_entries.len() {
+                                    let entry = &state.modlist_editor_entries[idx];
+                                    let entry_id = entry.id;
+                                    let new_enabled = !entry.enabled;
+                                    state.modlist_editor_entries[idx].enabled = new_enabled;
+                                    if let Some(eid) = entry_id {
+                                        drop(state);
+                                        let _ = app.db.update_modlist_entry_enabled(eid, new_enabled);
+                                        return Ok(());
+                                    }
+                                }
+                            }
+                            KeyCode::Char('d') => {
+                                // Delete entry
+                                if let Some(entry) = state.modlist_editor_entries.get(state.selected_modlist_editor_index) {
+                                    if let Some(entry_id) = entry.id {
+                                        let idx = state.selected_modlist_editor_index;
+                                        drop(state);
+                                        let _ = app.db.delete_modlist_entry(entry_id);
+                                        let mut state = app.state.write().await;
+                                        state.modlist_editor_entries.remove(idx);
+                                        if state.selected_modlist_editor_index >= state.modlist_editor_entries.len() && state.selected_modlist_editor_index > 0 {
+                                            state.selected_modlist_editor_index -= 1;
+                                        }
+                                        return Ok(());
+                                    }
+                                }
+                            }
+                            KeyCode::Char('J') => {
+                                // Move entry down
+                                if entry_count > 0 && state.selected_modlist_editor_index < entry_count - 1 {
+                                    let idx = state.selected_modlist_editor_index;
+                                    state.modlist_editor_entries.swap(idx, idx + 1);
+                                    // Update positions in DB
+                                    if let (Some(id_a), Some(id_b)) = (
+                                        state.modlist_editor_entries[idx].id,
+                                        state.modlist_editor_entries[idx + 1].id,
+                                    ) {
+                                        state.modlist_editor_entries[idx].position = idx as i32;
+                                        state.modlist_editor_entries[idx + 1].position = (idx + 1) as i32;
+                                        drop(state);
+                                        let _ = app.db.update_modlist_entry_position(id_a, idx as i32);
+                                        let _ = app.db.update_modlist_entry_position(id_b, (idx + 1) as i32);
+                                        let mut state = app.state.write().await;
+                                        state.selected_modlist_editor_index = idx + 1;
+                                        return Ok(());
+                                    }
+                                    state.selected_modlist_editor_index = idx + 1;
+                                }
+                            }
+                            KeyCode::Char('K') => {
+                                // Move entry up
+                                if state.selected_modlist_editor_index > 0 {
+                                    let idx = state.selected_modlist_editor_index;
+                                    state.modlist_editor_entries.swap(idx, idx - 1);
+                                    // Update positions in DB
+                                    if let (Some(id_a), Some(id_b)) = (
+                                        state.modlist_editor_entries[idx].id,
+                                        state.modlist_editor_entries[idx - 1].id,
+                                    ) {
+                                        state.modlist_editor_entries[idx].position = idx as i32;
+                                        state.modlist_editor_entries[idx - 1].position = (idx - 1) as i32;
+                                        drop(state);
+                                        let _ = app.db.update_modlist_entry_position(id_a, idx as i32);
+                                        let _ = app.db.update_modlist_entry_position(id_b, (idx - 1) as i32);
+                                        let mut state = app.state.write().await;
+                                        state.selected_modlist_editor_index = idx - 1;
+                                        return Ok(());
+                                    }
+                                    state.selected_modlist_editor_index = idx - 1;
+                                }
+                            }
+                            KeyCode::Esc => {
+                                // Back to list picker
+                                state.modlist_editor_mode = ModlistEditorMode::ListPicker;
+                                state.modlist_editor_entries.clear();
+                                state.active_modlist_id = None;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+
             Screen::FomodWizard => {
                 use crate::app::state::WizardPhase;
-                use crate::mods::fomod::wizard::init_wizard_state;
                 use crate::mods::fomod::validation::validate_group;
 
                 let wizard_state = state.fomod_wizard_state.as_ref();
@@ -3157,6 +4570,28 @@ impl Tui {
                     state.set_status(format!("Deleted profile: {}", name));
                 }
             }
+            ConfirmAction::ClearQueue => {
+                // Clear download queue
+                let state = app.state.read().await;
+                if let Some(batch_id) = state.import_batch_id.clone() {
+                    drop(state);
+                    let queue_manager = crate::queue::QueueManager::new(app.db.clone());
+                    let _ = queue_manager.clear_batch(&batch_id);
+                    let mut state = app.state.write().await;
+                    state.queue_entries.clear();
+                    state.import_batch_id = None;
+                    state.set_status("Queue cleared");
+                } else {
+                    drop(state);
+                    let mut state = app.state.write().await;
+                    state.set_status("No active queue");
+                }
+            }
+            ConfirmAction::LoadModlist(path) => {
+                // This is handled in the load flow, so just acknowledge
+                let mut state = app.state.write().await;
+                state.set_status(format!("Loading modlist from {}", path));
+            }
         }
 
         Ok(())
@@ -3216,7 +4651,7 @@ impl Tui {
             .filter_map(|&i| components.get(i))
             .collect();
 
-        if let Some(game) = app.active_game().await {
+        if app.active_game().await.is_some() {
             let archive_path_obj = std::path::Path::new(archive_path);
             let mod_name = archive_path_obj
                 .file_stem()
@@ -3488,10 +4923,10 @@ impl Tui {
                 st.installed_mods = updated_mods;
             }
 
-            let summary = if failed > 0 {
+            let summary = if failed > 0 || skipped > 0 {
                 format!(
-                    "✓ Bulk install complete: {} installed, {} failed (check logs for details)",
-                    installed, failed
+                    "✓ Bulk install complete: {} installed, {} skipped, {} failed (check logs for details)",
+                    installed, skipped, failed
                 )
             } else {
                 format!("✓ Bulk install complete: {} mods installed successfully!", installed)

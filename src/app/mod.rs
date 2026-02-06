@@ -5,7 +5,7 @@ pub mod state;
 
 pub use state::{AppState, ConfirmAction, ConfirmDialog, InputMode, Screen};
 
-use crate::config::Config;
+use crate::config::{Config, DeploymentMethod};
 use crate::db::Database;
 use crate::games::{Game, GameDetector};
 use crate::mods::ModManager;
@@ -119,6 +119,14 @@ impl App {
         config.active_game = game.map(|g| g.id);
         config.save().await?;
 
+        Ok(())
+    }
+
+    /// Set deployment method in config
+    pub async fn set_deployment_method(&self, method: DeploymentMethod) -> Result<()> {
+        let mut config = self.config.write().await;
+        config.deployment.method = method;
+        config.save().await?;
         Ok(())
     }
 }

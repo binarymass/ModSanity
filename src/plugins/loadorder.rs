@@ -2,7 +2,6 @@
 
 use crate::games::Game;
 use anyhow::{Context, Result};
-use std::path::Path;
 
 /// Read plugins.txt and return list of enabled plugins (lowercase)
 pub fn read_plugins_txt(game: &Game) -> Result<Vec<String>> {

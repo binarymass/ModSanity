@@ -1,14 +1,14 @@
 //! FOMOD group validation logic
 
-use super::{OptionGroup, WizardState};
+use super::OptionGroup;
 use std::collections::HashSet;
 
 /// Validate a group's selections against its constraints
 pub fn validate_group(
     group: &OptionGroup,
     selections: &HashSet<usize>,
-    step_idx: usize,
-    group_idx: usize,
+    _step_idx: usize,
+    _group_idx: usize,
 ) -> Result<(), String> {
     let count = selections.len();
     let group_type = &group.group_type;

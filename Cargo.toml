@@ -54,6 +54,7 @@ async-trait = "0.1"
 indicatif = "0.17"
 regex-lite = "0.1"
 which = "7"
+rand = "0.8"
 
 [dev-dependencies]
 tempfile = "3"

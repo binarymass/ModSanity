@@ -5,7 +5,7 @@
 //! 2. LOOT CLI integration (optional if user has LOOT installed)
 
 use anyhow::{bail, Context, Result};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 
 use crate::games::Game;
@@ -109,7 +109,7 @@ pub fn sort_plugins_native(plugins: &mut [PluginInfo]) -> Result<()> {
 
 /// Get LOOT's suggested load order without applying it
 /// Returns list of plugin filenames in suggested order
-pub fn get_suggested_order(game: &Game) -> Result<Vec<String>> {
+pub fn get_suggested_order(_game: &Game) -> Result<Vec<String>> {
     // LOOT doesn't have a direct "preview" mode in CLI, so this would require
     // reading the loadorder.txt after a sort, or using libloot API
     // For now, we'll just return an error suggesting to use auto-sort

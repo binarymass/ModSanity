@@ -1,7 +1,6 @@
 //! Helper utilities for FOMOD operations
 
 use super::{FomodInstaller, ModuleConfig, WizardState};
-use anyhow::Result;
 use std::path::Path;
 
 /// FOMOD helper utilities

@@ -9,9 +9,8 @@ mod paths;
 
 pub use paths::Paths;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use tokio::fs;
 
 /// Main configuration structure
@@ -83,6 +82,36 @@ pub enum DeploymentMethod {
     Symlink,
     Hardlink,
     Copy,
+}
+
+impl DeploymentMethod {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            DeploymentMethod::Symlink => "symlink",
+            DeploymentMethod::Hardlink => "hardlink",
+            DeploymentMethod::Copy => "copy",
+        }
+    }
+
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            DeploymentMethod::Symlink => "Symlink",
+            DeploymentMethod::Hardlink => "Hardlink",
+            DeploymentMethod::Copy => "Full Copy",
+        }
+    }
+
+    pub fn from_cli(value: &str) -> Result<Self> {
+        match value.to_ascii_lowercase().as_str() {
+            "symlink" => Ok(DeploymentMethod::Symlink),
+            "hardlink" => Ok(DeploymentMethod::Hardlink),
+            "copy" | "fullcopy" | "full-copy" | "full_copy" => Ok(DeploymentMethod::Copy),
+            other => bail!(
+                "Invalid deployment method '{}'. Valid values: symlink, hardlink, copy",
+                other
+            ),
+        }
+    }
 }
 
 /// TUI configuration
