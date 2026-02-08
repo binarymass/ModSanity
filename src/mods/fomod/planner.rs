@@ -223,7 +223,7 @@ fn collect_selections(wizard: &WizardState, installer: &FomodInstaller) -> Vec<O
 }
 
 /// Collect all flags from wizard evaluator
-fn collect_flags(wizard: &WizardState) -> HashMap<String, String> {
+fn collect_flags(_wizard: &WizardState) -> HashMap<String, String> {
     // For now, we'll need to track flags as they're set
     // The evaluator doesn't expose its internal flags map
     // This is a limitation we'll need to address
@@ -249,7 +249,7 @@ fn compile_file_operations(
                 destination,
                 priority,
             } => {
-                let src = staging_path.join(&source);
+                let _src = staging_path.join(&source);
                 let dst = if destination.is_empty() {
                     target_path.join(Path::new(&source).file_name().unwrap_or_default())
                 } else {

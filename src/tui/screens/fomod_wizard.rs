@@ -4,7 +4,7 @@
 //! live validation, and visual feedback.
 
 use crate::app::state::{AppState, FomodWizardState, WizardPhase};
-use crate::mods::fomod::{validation, ConflictSeverity, InstallPlan, InstallerValidator, PluginType};
+use crate::mods::fomod::{validation, PluginType};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},

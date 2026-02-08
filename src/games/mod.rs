@@ -1,10 +1,13 @@
 //! Game detection and management
 
 mod proton;
+mod proton_runtime;
 pub mod skyrimse;
 
 pub use proton::ProtonHelper;
+pub use proton_runtime::{detect_proton_runtimes, ProtonRuntime};
 
+use crate::config::CustomGameConfig;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -19,6 +22,18 @@ pub enum GameType {
 }
 
 impl GameType {
+    /// Parse from stable game ID.
+    pub fn from_id(id: &str) -> Option<Self> {
+        match id.to_ascii_lowercase().as_str() {
+            "skyrimse" => Some(GameType::SkyrimSE),
+            "skyrimvr" => Some(GameType::SkyrimVR),
+            "fallout4" => Some(GameType::Fallout4),
+            "fallout4vr" => Some(GameType::Fallout4VR),
+            "starfield" => Some(GameType::Starfield),
+            _ => None,
+        }
+    }
+
     /// Get the Steam App ID for this game
     pub fn steam_app_id(&self) -> u32 {
         match self {
@@ -86,6 +101,26 @@ impl GameType {
     }
 }
 
+/// Source platform for a detected game install.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GamePlatform {
+    #[default]
+    Steam,
+    Gog,
+    Manual,
+}
+
+impl GamePlatform {
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            GamePlatform::Steam => "Steam",
+            GamePlatform::Gog => "GOG",
+            GamePlatform::Manual => "Manual",
+        }
+    }
+}
+
 /// Represents a detected game installation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Game {
@@ -127,6 +162,10 @@ pub struct Game {
 
     /// Is this a VR game?
     pub is_vr: bool,
+
+    /// Installation source platform.
+    #[serde(default)]
+    pub platform: GamePlatform,
 }
 
 impl Game {
@@ -155,6 +194,7 @@ impl Game {
             loadorder_txt_path: None,
             executable,
             is_vr: matches!(game_type, GameType::SkyrimVR | GameType::Fallout4VR),
+            platform: GamePlatform::Steam,
         }
     }
 
@@ -181,6 +221,17 @@ impl Game {
             GameType::Starfield => "Starfield",
         }
     }
+
+    /// Get the NexusMods game domain for API calls
+    pub fn nexus_game_domain(&self) -> String {
+        self.nexus_game_id.clone()
+    }
+
+    /// Set source platform.
+    pub fn with_platform(mut self, platform: GamePlatform) -> Self {
+        self.platform = platform;
+        self
+    }
 }
 
 /// Game detection utilities
@@ -202,7 +253,84 @@ impl GameDetector {
             }
         }
 
-        games
+        // Also scan common GOG install locations.
+        for game_type in GameType::all() {
+            if let Some(game) = Self::detect_gog_game(*game_type) {
+                if !games.iter().any(|g| g.id == game.id && g.install_path == game.install_path) {
+                    games.push(game);
+                }
+            }
+        }
+
+        Self::dedupe_games(games)
+    }
+
+    /// Detect Steam + custom configured entries.
+    pub async fn detect_all_with_custom(custom: &[CustomGameConfig]) -> Vec<Game> {
+        let mut games = Self::detect_all().await;
+
+        for entry in custom {
+            let Some(game_type) = GameType::from_id(&entry.game_id) else {
+                tracing::warn!("Ignoring custom game with unknown id '{}'", entry.game_id);
+                continue;
+            };
+
+            let install_path = PathBuf::from(entry.install_path.trim());
+            if !install_path.exists() {
+                tracing::warn!(
+                    "Ignoring custom game '{}' because path does not exist: {}",
+                    entry.game_id,
+                    install_path.display()
+                );
+                continue;
+            }
+
+            let platform = match entry.platform.to_ascii_lowercase().as_str() {
+                "steam" => GamePlatform::Steam,
+                "gog" => GamePlatform::Gog,
+                _ => GamePlatform::Manual,
+            };
+
+            let mut game = Game::new(game_type, install_path.clone()).with_platform(platform);
+            if let Some(prefix) = entry
+                .proton_prefix
+                .as_deref()
+                .map(str::trim)
+                .filter(|p| !p.is_empty())
+            {
+                let prefix = PathBuf::from(prefix);
+                if prefix.exists() {
+                    game = game.with_proton_prefix(prefix);
+                }
+            } else if let Some(prefix) = Self::infer_prefix_from_install_path(&install_path) {
+                game = game.with_proton_prefix(prefix);
+            }
+
+            if !games
+                .iter()
+                .any(|g| g.id == game.id && g.install_path == game.install_path)
+            {
+                games.push(game);
+            }
+        }
+
+        Self::dedupe_games(games)
+    }
+
+    fn dedupe_games(games: Vec<Game>) -> Vec<Game> {
+        let mut out = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for game in games {
+            let canonical = game
+                .install_path
+                .canonicalize()
+                .unwrap_or_else(|_| game.install_path.clone());
+            let key = format!("{}:{}", game.id, canonical.display());
+            if seen.insert(key) {
+                out.push(game);
+            }
+        }
+        out
     }
 
     /// Find all Steam library folders
@@ -262,7 +390,7 @@ impl GameDetector {
             return None;
         }
 
-        let mut game = Game::new(game_type, install_path);
+        let mut game = Game::new(game_type, install_path).with_platform(GamePlatform::Steam);
 
         // Check for Proton prefix
         let compatdata = steamapps.join("compatdata").join(game_type.steam_app_id().to_string());
@@ -271,6 +399,61 @@ impl GameDetector {
         }
 
         Some(game)
+    }
+
+    /// Detect GOG installs in common Linux paths and wine prefixes.
+    fn detect_gog_game(game_type: GameType) -> Option<Game> {
+        let home = dirs::home_dir().unwrap_or_default();
+        let title = game_type.display_name();
+        let mut candidates = vec![
+            home.join(format!("GOG Games/{}", title)),
+            home.join(format!("Games/GOG Games/{}", title)),
+            home.join(format!("Games/{}", title)),
+            home.join(format!(".local/share/Steam/steamapps/compatdata/{}/pfx/drive_c/GOG Games/{}", game_type.steam_app_id(), title)),
+        ];
+
+        // Known extra aliases observed in the wild.
+        if matches!(game_type, GameType::SkyrimSE) {
+            candidates.push(home.join("GOG Games/Skyrim Anniversary Edition"));
+            candidates.push(home.join(".local/share/Steam/steamapps/compatdata/1711230/pfx/drive_c/GOG Games/Skyrim Special Edition"));
+            candidates.push(home.join(".local/share/Steam/steamapps/compatdata/1711230/pfx/drive_c/GOG Games/Skyrim Anniversary Edition"));
+        }
+
+        for install_path in candidates {
+            if !install_path.exists() {
+                continue;
+            }
+            let exe = match game_type {
+                GameType::SkyrimSE => "SkyrimSE.exe",
+                GameType::SkyrimVR => "SkyrimVR.exe",
+                GameType::Fallout4 => "Fallout4.exe",
+                GameType::Fallout4VR => "Fallout4VR.exe",
+                GameType::Starfield => "Starfield.exe",
+            };
+            if !install_path.join(exe).exists() {
+                continue;
+            }
+
+            let mut game = Game::new(game_type, install_path.clone()).with_platform(GamePlatform::Gog);
+            if let Some(prefix) = Self::infer_prefix_from_install_path(&install_path) {
+                game = game.with_proton_prefix(prefix);
+            }
+            return Some(game);
+        }
+
+        None
+    }
+
+    /// Infer Proton prefix root from an install path inside a wine prefix.
+    fn infer_prefix_from_install_path(install_path: &PathBuf) -> Option<PathBuf> {
+        let mut cur = Some(install_path.as_path());
+        while let Some(path) = cur {
+            if path.ends_with("pfx/drive_c") {
+                return path.parent().map(std::path::Path::to_path_buf);
+            }
+            cur = path.parent();
+        }
+        None
     }
 }
 

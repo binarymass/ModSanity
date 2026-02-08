@@ -1,6 +1,6 @@
 [package]
 name = "modsanity"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2021"
 authors = ["ModSanity Contributors"]
 description = "A CLI/TUI mod manager for Bethesda games on Linux"
@@ -54,6 +54,7 @@ async-trait = "0.1"
 indicatif = "0.17"
 regex-lite = "0.1"
 which = "7"
+rand = "0.8"
 
 [dev-dependencies]
 tempfile = "3"

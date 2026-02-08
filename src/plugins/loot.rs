@@ -5,7 +5,7 @@
 //! 2. LOOT CLI integration (optional if user has LOOT installed)
 
 use anyhow::{bail, Context, Result};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 
 use crate::games::Game;
@@ -89,6 +89,7 @@ fn map_game_to_loot(game_id: &str) -> Result<String> {
         "falloutnv" => "FalloutNV",
         "fallout4" => "Fallout4",
         "fallout4vr" => "Fallout4VR",
+        "starfield" => "Starfield",
         "oblivion" => "Oblivion",
         "morrowind" => "Morrowind",
         _ => bail!("Game '{}' is not supported by LOOT", game_id),
@@ -102,14 +103,14 @@ fn map_game_to_loot(game_id: &str) -> Result<String> {
 /// - No external dependencies required
 /// - Faster than calling LOOT CLI
 /// - Handles all essential sorting rules
-pub fn sort_plugins_native(plugins: &mut [PluginInfo]) -> Result<()> {
-    super::sort::optimize_load_order(plugins)
+pub fn sort_plugins_native(game_id: &str, plugins: &mut [PluginInfo]) -> Result<()> {
+    super::sort::optimize_load_order(plugins, game_id)
         .context("Failed to optimize plugin load order")
 }
 
 /// Get LOOT's suggested load order without applying it
 /// Returns list of plugin filenames in suggested order
-pub fn get_suggested_order(game: &Game) -> Result<Vec<String>> {
+pub fn get_suggested_order(_game: &Game) -> Result<Vec<String>> {
     // LOOT doesn't have a direct "preview" mode in CLI, so this would require
     // reading the loadorder.txt after a sort, or using libloot API
     // For now, we'll just return an error suggesting to use auto-sort

@@ -9,9 +9,64 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Gauge, List, ListItem, Paragraph, Tabs, Wrap},
     Frame,
 };
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static MINIMAL_COLOR_MODE: AtomicBool = AtomicBool::new(false);
+
+fn minimal_color_mode() -> bool {
+    MINIMAL_COLOR_MODE.load(Ordering::Relaxed)
+}
+
+fn set_minimal_color_mode(enabled: bool) {
+    MINIMAL_COLOR_MODE.store(enabled, Ordering::Relaxed);
+}
+
+fn map_fg_color(color: Color) -> Color {
+    if !minimal_color_mode() {
+        return color;
+    }
+    match color {
+        Color::Reset => Color::Reset,
+        Color::Black => Color::Black,
+        Color::DarkGray | Color::Gray => Color::Gray,
+        Color::White => Color::White,
+        _ => Color::White,
+    }
+}
+
+fn map_bg_color(color: Color) -> Color {
+    if !minimal_color_mode() {
+        return color;
+    }
+    match color {
+        Color::Reset => Color::Reset,
+        _ => Color::Black,
+    }
+}
+
+fn themed(style: Style) -> Style {
+    if !minimal_color_mode() {
+        return style;
+    }
+    let mut mapped = style;
+    mapped.fg = mapped.fg.map(map_fg_color);
+    mapped.bg = mapped.bg.map(map_bg_color);
+    mapped
+}
+
+fn sfg(color: Color) -> Style {
+    Style::default().fg(map_fg_color(color))
+}
 
 /// Draw the main UI
 pub fn draw(f: &mut Frame, app: &App, state: &AppState) {
+    let minimal_mode = app
+        .config
+        .try_read()
+        .map(|c| c.tui.minimal_color_mode)
+        .unwrap_or(false);
+    set_minimal_color_mode(minimal_mode);
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -39,7 +94,7 @@ pub fn draw(f: &mut Frame, app: &App, state: &AppState) {
 
     // Draw help overlay if active
     if state.show_help {
-        draw_help(f);
+        draw_help(f, state);
     }
 
     // Draw input overlays
@@ -47,12 +102,22 @@ pub fn draw(f: &mut Frame, app: &App, state: &AppState) {
         InputMode::ModInstallPath => draw_mod_install_input(f, state),
         InputMode::ProfileNameInput => draw_profile_name_input(f, state),
         InputMode::ModDirectoryInput => draw_mod_directory_input(f, state),
+        InputMode::DownloadsDirectoryInput => draw_downloads_directory_input(f, state),
+        InputMode::StagingDirectoryInput => draw_staging_directory_input(f, state),
+        InputMode::ProtonCommandInput => draw_proton_command_input(f, state),
+        InputMode::ExternalToolPathInput => draw_external_tool_path_input(f, state),
         InputMode::NexusApiKeyInput => draw_nexus_api_key_input(f, state),
         InputMode::FomodComponentSelection => draw_fomod_component_selection(f, state),
         InputMode::CollectionPath => draw_collection_input(f, state),
         InputMode::PluginPositionInput => draw_plugin_position_input(f, state),
         InputMode::ModSearch => draw_mod_search_input(f, state),
         InputMode::PluginSearch => draw_plugin_search_input(f, state),
+        InputMode::ImportFilePath => draw_import_file_input(f, state),
+        InputMode::SaveModlistPath => draw_save_modlist_input(f, state),
+        InputMode::LoadModlistPath => draw_load_modlist_input(f, state),
+        InputMode::CatalogSearch => draw_catalog_search_input(f, state),
+        InputMode::ModlistNameInput => draw_modlist_name_input(f, state),
+        InputMode::QueueManualModIdInput => draw_queue_manual_mod_id_input(f, state),
         _ => {}
     }
 
@@ -64,6 +129,11 @@ pub fn draw(f: &mut Frame, app: &App, state: &AppState) {
     // Draw categorization progress if active
     if let Some(progress) = &state.categorization_progress {
         draw_categorization_progress(f, progress);
+    }
+
+    // Draw import progress if active
+    if let Some(progress) = &state.import_progress {
+        draw_import_progress(f, progress);
     }
 
     // Draw file picker overlay if active
@@ -92,18 +162,18 @@ fn draw_header(f: &mut Frame, state: &AppState, area: Rect) {
     // Will show in settings screen instead
     let title = format!(
         " ModSanity v{}  |  {} | {}/{} mods enabled ",
-        env!("CARGO_PKG_VERSION"),
+        crate::APP_VERSION,
         game_name,
         mod_count,
         total_mods
     );
 
     let header = Paragraph::new(title)
-        .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .style(themed(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Cyan)),
+                .border_style(sfg(Color::Cyan)),
         );
 
     f.render_widget(header, area);
@@ -111,22 +181,26 @@ fn draw_header(f: &mut Frame, state: &AppState, area: Rect) {
 
 /// Draw the tab bar
 fn draw_tabs(f: &mut Frame, state: &AppState, area: Rect) {
-    let titles = vec!["F1 Mods", "F2 Plugins", "F3 Profiles", "F4 Settings"];
+    let titles = vec!["F1 Mods", "F2 Plugins", "F3 Profiles", "F4 Settings", "F5 Import", "F6 Queue", "F7 Catalog", "F8 Modlists"];
     let selected = match state.current_screen {
         Screen::Dashboard | Screen::Mods | Screen::ModDetails => 0,
         Screen::Plugins => 1,
         Screen::Profiles => 2,
         Screen::Settings => 3,
-        Screen::GameSelect | Screen::FomodWizard | Screen::Collection | Screen::Browse | Screen::LoadOrder => 0,
+        Screen::Import | Screen::ImportReview => 4,
+        Screen::DownloadQueue => 5,
+        Screen::NexusCatalog => 6,
+        Screen::ModlistEditor => 7,
+        Screen::GameSelect | Screen::FomodWizard | Screen::Collection | Screen::Browse | Screen::LoadOrder | Screen::ModlistReview => 0,
     };
 
     let tabs = Tabs::new(titles)
         .select(selected)
-        .style(Style::default().fg(Color::DarkGray))
+        .style(sfg(Color::DarkGray))
         .highlight_style(
-            Style::default()
+            themed(Style::default()
                 .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
+                .add_modifier(Modifier::BOLD)),
         )
         .divider("|");
 
@@ -146,6 +220,12 @@ fn draw_content(f: &mut Frame, app: &App, state: &AppState, area: Rect) {
         Screen::Collection => draw_collection_screen(f, state, area),
         Screen::Browse => draw_browse_screen(f, state, area),
         Screen::LoadOrder => draw_load_order_screen(f, state, area),
+        Screen::Import => draw_import_screen(f, state, area),
+        Screen::ImportReview => draw_import_review_screen(f, state, area),
+        Screen::DownloadQueue => draw_queue_screen(f, state, area),
+        Screen::NexusCatalog => screens::nexus_catalog::render(f, area, state),
+        Screen::ModlistReview => draw_modlist_review_screen(f, state, area),
+        Screen::ModlistEditor => draw_modlist_editor_screen(f, state, area),
     }
 }
 
@@ -183,7 +263,9 @@ fn draw_game_select(f: &mut Frame, app: &App, state: &AppState, area: Rect) {
         .block(Block::default().title(title).borders(Borders::ALL))
         .highlight_style(Style::default().add_modifier(Modifier::BOLD));
 
-    f.render_widget(list, chunks[0]);
+    let mut list_state = ratatui::widgets::ListState::default();
+    list_state.select(Some(state.selected_game_index));
+    f.render_stateful_widget(list, chunks[0], &mut list_state);
 
     // Game details
     if let Some(g) = app.games.get(state.selected_game_index) {
@@ -868,10 +950,43 @@ fn draw_collection_screen(f: &mut Frame, state: &AppState, area: Rect) {
 /// Draw settings screen
 fn draw_settings_screen(f: &mut Frame, app: &App, state: &AppState, area: Rect) {
     // Try to get config without blocking - this is a workaround for sync context
-    let (mod_dir_display, api_key_display) = if let Ok(config) = app.config.try_read() {
+    let (
+        mod_dir_display,
+        downloads_dir_display,
+        staging_dir_display,
+        proton_cmd_display,
+        proton_runtime_display,
+        minimal_color_display,
+        xedit_display,
+        ssedit_display,
+        fnis_display,
+        nemesis_display,
+        symphony_display,
+        bodyslide_display,
+        outfit_display,
+        api_key_display,
+        deployment_method_display,
+        backup_display,
+    ) = if let Ok(config) = app.config.try_read() {
         let mod_dir = config.tui.default_mod_directory
             .clone()
             .unwrap_or_else(|| "Not set".to_string());
+        let downloads_dir = config.downloads_dir().display().to_string();
+        let staging_dir = config.staging_dir().display().to_string();
+        let proton_cmd = config.external_tools.proton_command.clone();
+        let proton_runtime = config
+            .external_tools
+            .proton_runtime
+            .clone()
+            .unwrap_or_else(|| "Custom command/path".to_string());
+        let minimal_color = if config.tui.minimal_color_mode { "Enabled" } else { "Disabled" }.to_string();
+        let xedit = config.external_tools.xedit_path.clone().unwrap_or_else(|| "Not set".to_string());
+        let ssedit = config.external_tools.ssedit_path.clone().unwrap_or_else(|| "Not set".to_string());
+        let fnis = config.external_tools.fnis_path.clone().unwrap_or_else(|| "Not set".to_string());
+        let nemesis = config.external_tools.nemesis_path.clone().unwrap_or_else(|| "Not set".to_string());
+        let symphony = config.external_tools.symphony_path.clone().unwrap_or_else(|| "Not set".to_string());
+        let bodyslide = config.external_tools.bodyslide_path.clone().unwrap_or_else(|| "Not set".to_string());
+        let outfit = config.external_tools.outfitstudio_path.clone().unwrap_or_else(|| "Not set".to_string());
 
         let api_key = if let Some(ref key) = config.nexus_api_key {
             if key.len() > 8 {
@@ -885,16 +1000,65 @@ fn draw_settings_screen(f: &mut Frame, app: &App, state: &AppState, area: Rect) 
             "Not set".to_string()
         };
 
-        (mod_dir, api_key)
+        let deployment_method = config.deployment.method.display_name().to_string();
+        let backup_originals = if config.deployment.backup_originals { "Yes" } else { "No" }.to_string();
+
+        (
+            mod_dir,
+            downloads_dir,
+            staging_dir,
+            proton_cmd,
+            proton_runtime,
+            minimal_color,
+            xedit,
+            ssedit,
+            fnis,
+            nemesis,
+            symphony,
+            bodyslide,
+            outfit,
+            api_key,
+            deployment_method,
+            backup_originals,
+        )
     } else {
-        ("Loading...".to_string(), "Loading...".to_string())
+        (
+            "Loading...".to_string(),
+            "Loading...".to_string(),
+            "Loading...".to_string(),
+            "Loading...".to_string(),
+            "Loading...".to_string(),
+            "Loading...".to_string(),
+            "Loading...".to_string(),
+            "Loading...".to_string(),
+            "Loading...".to_string(),
+            "Loading...".to_string(),
+            "Loading...".to_string(),
+            "Loading...".to_string(),
+            "Loading...".to_string(),
+            "Loading...".to_string(),
+            "Loading...".to_string(),
+            "Loading...".to_string(),
+        )
     };
 
     let settings = vec![
         ("NexusMods API Key", api_key_display),
-        ("Deployment Method", "Symlink (recommended)".to_string()),
-        ("Backup Originals", "Yes".to_string()),
+        ("Deployment Method", deployment_method_display),
+        ("Backup Originals", backup_display),
+        ("Downloads Directory", downloads_dir_display),
+        ("Staging Directory", staging_dir_display),
         ("Default Mod Directory", mod_dir_display),
+        ("Proton Command", proton_cmd_display),
+        ("Proton Runtime", proton_runtime_display),
+        ("Minimal Color Mode", minimal_color_display),
+        ("xEdit Path", xedit_display),
+        ("SSEEdit Path", ssedit_display),
+        ("FNIS Path", fnis_display),
+        ("Nemesis Path", nemesis_display),
+        ("Symphony Path", symphony_display),
+        ("BodySlide Path", bodyslide_display),
+        ("Outfit Studio Path", outfit_display),
         ("Game Selection", "Change active game".to_string()),
     ];
 
@@ -903,9 +1067,9 @@ fn draw_settings_screen(f: &mut Frame, app: &App, state: &AppState, area: Rect) 
         .enumerate()
         .map(|(i, (name, value))| {
             let style = if i == state.selected_setting_index {
-                Style::default()
+                themed(Style::default()
                     .bg(Color::DarkGray)
-                    .add_modifier(Modifier::BOLD)
+                    .add_modifier(Modifier::BOLD))
             } else {
                 Style::default()
             };
@@ -914,7 +1078,7 @@ fn draw_settings_screen(f: &mut Frame, app: &App, state: &AppState, area: Rect) 
                 Line::from(Span::styled(name.to_string(), style)),
                 Line::from(Span::styled(
                     format!("  {}", value),
-                    Style::default().fg(Color::DarkGray),
+                    sfg(Color::DarkGray),
                 )),
             ])
         })
@@ -922,9 +1086,11 @@ fn draw_settings_screen(f: &mut Frame, app: &App, state: &AppState, area: Rect) 
 
     let list = List::new(items)
         .block(Block::default().title(" Settings ").borders(Borders::ALL))
-        .highlight_style(Style::default().add_modifier(Modifier::BOLD));
+        .highlight_style(themed(Style::default().add_modifier(Modifier::BOLD)));
 
-    f.render_widget(list, area);
+    let mut list_state = ratatui::widgets::ListState::default();
+    list_state.select(Some(state.selected_setting_index));
+    f.render_stateful_widget(list, area, &mut list_state);
 }
 
 /// Draw FOMOD wizard
@@ -941,7 +1107,7 @@ fn draw_categories_sidebar(f: &mut Frame, state: &AppState, area: Rect) {
     )))];
 
     // Add each category
-    for (i, category) in state.categories.iter().enumerate() {
+    for category in &state.categories {
         let is_selected = state.category_filter == category.id;
         let prefix = if is_selected { " > " } else { "   " };
 
@@ -974,7 +1140,9 @@ fn draw_categories_sidebar(f: &mut Frame, state: &AppState, area: Rect) {
                 .border_style(Style::default().fg(Color::Cyan)),
         );
 
-    f.render_widget(list, area);
+    let mut list_state = ratatui::widgets::ListState::default();
+    list_state.select(Some(state.selected_category_index));
+    f.render_stateful_widget(list, area, &mut list_state);
 }
 
 /// Parse hex color string to ratatui Color
@@ -987,7 +1155,7 @@ fn parse_color(hex: &str) -> Option<Color> {
     let g = u8::from_str_radix(&hex[3..5], 16).ok()?;
     let b = u8::from_str_radix(&hex[5..7], 16).ok()?;
 
-    Some(Color::Rgb(r, g, b))
+    Some(map_fg_color(Color::Rgb(r, g, b)))
 }
 
 /// Draw footer with status and keybindings
@@ -997,8 +1165,9 @@ fn draw_footer(f: &mut Frame, state: &AppState, area: Rect) {
     let help_hint = match state.current_screen {
         Screen::GameSelect => "Enter:select  q:quit",
         Screen::Mods | Screen::Dashboard => {
-            "/:search  j/k:nav  r:refresh  i:install  b:browse  o:load-order  Space:toggle  d:delete  D:deploy  ?:help  q:quit"
-        }
+            "/:search  j/k:nav  i:install  S:save  L:load(saved/file)  b:browse  o:load-order  Space:toggle  d:delete  D:deploy  ?:help  q:quit"
+        },
+        Screen::ModlistReview => "j/k:nav  Enter:queue-downloads  Esc:cancel  ?:help",
         Screen::LoadOrder => {
             if state.reorder_mode {
                 "j/k:move  J/K:jump-5  t/b:top/bottom  Enter:stop-reorder  s:save  Esc:cancel-reorder"
@@ -1014,11 +1183,12 @@ fn draw_footer(f: &mut Frame, state: &AppState, area: Rect) {
             }
         }
         Screen::Profiles => "j/k:nav  n:new  Enter:activate  d:delete  ?:help  q:quit",
-        Screen::Settings => "j/k:nav  Enter:edit  Esc:back  ?:help  q:quit",
+        Screen::Settings => "j/k:nav  Enter:edit  l:launch-tool  Esc:back  ?:help  q:quit",
         Screen::Collection => "j/k:nav  i:install  a:install-all  Esc:back  ?:help  q:quit",
         Screen::Browse => "s:search  f:sort  n/p:page  j/k:nav  Enter:select-file  Esc:back  ?:help  q:quit",
         Screen::ModDetails => "j/k:scroll  Esc:back  ?:help  q:quit",
         Screen::FomodWizard => "j/k:nav  Space:select  Enter:continue  b:back  Esc:cancel  ?:help",
+        Screen::DownloadQueue => "j/k:nav  h/l:alt  m:apply-alt  M:manual-id  p:process  r:refresh  c:clear  ?:help  q:quit",
         _ => "?:help  Esc:back  q:quit",
     };
 
@@ -1029,7 +1199,7 @@ fn draw_footer(f: &mut Frame, state: &AppState, area: Rect) {
     };
 
     let footer = Paragraph::new(footer_text)
-        .style(Style::default().fg(Color::DarkGray))
+        .style(sfg(Color::DarkGray))
         .block(Block::default().borders(Borders::TOP));
 
     f.render_widget(footer, area);
@@ -1168,87 +1338,222 @@ fn draw_requirements_dialog(f: &mut Frame, dialog: &crate::app::state::Requireme
 }
 
 /// Draw help overlay
-fn draw_help(f: &mut Frame) {
+fn draw_help(f: &mut Frame, state: &AppState) {
     let area = centered_rect(70, 95, f.area());
 
     f.render_widget(Clear, area);
 
-    let help_text = vec![
+    let pages: Vec<(&str, Vec<&str>)> = vec![
+        (
+            "Global Navigation",
+            vec![
+                "Tabs",
+                "  F1 Mods",
+                "  F2 Plugins",
+                "  F3 Profiles",
+                "  F4 Settings",
+                "  F5 Import",
+                "  F6 Queue",
+                "  F7 Catalog",
+                "  F8 Modlists",
+                "",
+                "Global",
+                "  g           Game selection screen",
+                "  Esc         Back (when not in help/input)",
+                "  q/Ctrl+C    Quit",
+                "  ?           Open/close help",
+                "",
+                "Help paging",
+                "  n / Right / PgDn   Next help page",
+                "  p / Left  / PgUp   Previous help page",
+                "  Esc or ?           Close help",
+            ],
+        ),
+        (
+            "Mods Screen (F1)",
+            vec![
+                "Navigation",
+                "  j/k, Up/Down        Select mod",
+                "  PgDn/PgUp           Jump by 10 mods",
+                "  Home/End            Jump to start/end",
+                "  Enter               Open mod details",
+                "",
+                "Actions",
+                "  Space/e             Toggle enable/disable",
+                "  a / n               Enable all / disable all",
+                "  + / -               Adjust priority",
+                "  /                   Search mods by name",
+                "  i                   Install from path",
+                "  I                   Bulk install from default folder",
+                "  l                   Install from Downloads folder",
+                "  d/Delete            Delete selected mod",
+                "  D                   Deploy enabled mods",
+                "  r                   Refresh list",
+                "  o                   Open load order",
+                "  C                   Load Nexus collection file",
+                "  b                   Browse Nexus",
+                "  U                   Check updates",
+                "  x                   Check requirements",
+            ],
+        ),
+        (
+            "Mods Screen (F1) - Extended",
+            vec![
+                "FOMOD and Categorization",
+                "  f                   Reconfigure selected mod FOMOD",
+                "  Left/Right          Category selection pane",
+                "  c                   Assign selected category to mod",
+                "  A                   Auto-categorize uncategorized mods",
+                "  Shift+A             Force recategorize all mods",
+                "  s                   Auto-sort by category",
+                "  R                   Rescan staging and sync DB",
+                "",
+                "Modlist operations",
+                "  S                   Save modlist",
+                "  L                   Load modlist (saved or file)",
+                "",
+                "Notes",
+                "  - Some actions require active game/API key.",
+                "  - File picker overlays use j/k + Enter + Esc.",
+            ],
+        ),
+        (
+            "Plugins + Load Order",
+            vec![
+                "Plugins Screen (F2)",
+                "  /                   Search plugins",
+                "  Enter               Toggle reorder mode",
+                "  j/k                 Move or navigate",
+                "  J/K                 Jump by 5 (reorder mode)",
+                "  t/b                 Move to top/bottom (reorder mode)",
+                "  #                   Jump to absolute position",
+                "  Space               Toggle plugin enabled",
+                "  a / n               Enable all / disable all",
+                "  s                   Save plugin order",
+                "  S                   Native auto-sort",
+                "  L                   LOOT auto-sort",
+                "",
+                "Load Order Screen (o from F1)",
+                "  Enter               Toggle reorder mode",
+                "  j/k, J/K, t/b       Reorder controls",
+                "  s                   Save",
+                "  S                   Auto-sort by category",
+            ],
+        ),
+        (
+            "Profiles + Settings",
+            vec![
+                "Profiles Screen (F3)",
+                "  j/k, Up/Down        Select profile",
+                "  n                   New profile",
+                "  Enter               Activate profile",
+                "  d/Delete            Delete profile",
+                "",
+                "Settings Screen (F4)",
+                "  j/k, Up/Down        Select setting row",
+                "  Enter               Edit/toggle selected setting",
+                "  l                   Launch tool (tool path rows)",
+                "",
+                "Editable settings include",
+                "  API key, deployment, backup",
+                "  downloads/staging/default mod dir",
+                "  Proton command, Proton runtime",
+                "  minimal color mode, tool executable paths",
+                "  game selection",
+            ],
+        ),
+        (
+            "Import + Queue + Catalog",
+            vec![
+                "Import Screen (F5)",
+                "  i                   Import MO2 modlist file",
+                "",
+                "Import Review",
+                "  j/k                 Navigate matches",
+                "  Enter               Queue pending downloads",
+                "",
+                "Queue Screen (F6)",
+                "  j/k                 Select entry",
+                "  p                   Process selected batch",
+                "  r                   Refresh queue",
+                "  c                   Clear selected batch",
+                "  h/l                 Cycle alternatives",
+                "  m                   Apply alternative",
+                "  M                   Manual Nexus mod ID",
+                "",
+                "Catalog Screen (F7)",
+                "  /                   Search catalog",
+                "  n/p                 Next/prev page",
+                "  r                   Reset search",
+            ],
+        ),
+        (
+            "Modlists + Other TUI Flows",
+            vec![
+                "Modlists Screen (F8)",
+                "  j/k                 Navigate saved modlists/entries",
+                "  Enter               Open list or entry",
+                "  n                   New modlist",
+                "  l                   Load selected saved modlist",
+                "  d/Delete            Delete saved modlist or entry",
+                "  s                   Save editor changes",
+                "  Esc                 Back to picker/previous screen",
+                "",
+                "Browse (from F1 'b')",
+                "  s                   Start search",
+                "  f                   Cycle sort mode",
+                "  n/p, PgDn/PgUp      Next/previous page",
+                "  j/k                 Navigate results",
+                "  Enter               Select mod then file",
+                "",
+                "Collection/Requirements dialogs",
+                "  j/k                 Navigate",
+                "  Enter/d             Download selected requirement",
+            ],
+        ),
+        (
+            "CLI Command Map",
+            vec![
+                "Top-level commands",
+                "  tui, game, mod, profile, import, queue, modlist",
+                "  nexus, deployment, tool, deploy, status, doctor,",
+                "  init, audit, getting-started",
+                "",
+                "Game",
+                "  list, scan, select, info, add-path, remove-path",
+                "Mod",
+                "  list, install, enable, disable, remove, info, rescan",
+                "Profile",
+                "  list, create, switch, delete, export, import",
+                "Import/Queue/Modlist",
+                "  import modlist/status, queue list/process/retry/clear,",
+                "  modlist save/load",
+                "Nexus/Deployment/Tool",
+                "  nexus populate/status",
+                "  deployment show/set-method/set-downloads-dir/clear-downloads-dir/",
+                "    set-staging-dir/clear-staging-dir",
+                "  tool show/list-proton/use-proton/clear-proton-runtime/",
+                "    set-proton/set-path/clear-path/run",
+            ],
+        ),
+    ];
+
+    let page_count = pages.len();
+    let current = state.help_page.min(page_count.saturating_sub(1));
+    let (title, lines) = &pages[current];
+    let mut help_text = vec![
         Line::from(Span::styled(
-            "Keyboard Shortcuts",
+            format!("{} ({}/{})", title, current + 1, page_count),
             Style::default().add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
-        Line::from("Navigation:"),
-        Line::from("  F1-F5       Switch tabs"),
-        Line::from("  j/Down      Move down"),
-        Line::from("  k/Up        Move up"),
-        Line::from("  PgDn        Jump down 10 items"),
-        Line::from("  PgUp        Jump up 10 items"),
-        Line::from("  Enter       Select/confirm"),
-        Line::from("  Esc         Go back"),
-        Line::from("  g           Game selection"),
-        Line::from(""),
-        Line::from("Mod Management:"),
-        Line::from("  /        Search mods by name"),
-        Line::from("  Space/e  Enable/disable selected mod"),
-        Line::from("  a        Enable all mods"),
-        Line::from("  n        Disable all mods"),
-        Line::from("  +/-      Change priority"),
-        Line::from("  r        Refresh mod list"),
-        Line::from("  i        Install from file path"),
-        Line::from("  I        Bulk install from default directory"),
-        Line::from("  l        Load from Downloads folder"),
-        Line::from("  f        Reconfigure FOMOD installer for selected mod"),
-        Line::from("  R        Rescan mods directory and rebuild database"),
-        Line::from("  C        Load Nexus Mods collection"),
-        Line::from("  b        Browse/search Nexus Mods (requires API key)"),
-        Line::from("  U        Check for mod updates (requires API key)"),
-        Line::from("  x        Check requirements for selected mod (requires API key)"),
-        Line::from("  d/Del    Delete selected mod"),
-        Line::from("  D        Deploy all enabled mods"),
-        Line::from("  o        Open Load Order screen"),
-        Line::from(""),
-        Line::from("Categories:"),
-        Line::from("  Left/Right  Navigate categories"),
-        Line::from("  c           Assign category to mod (cycle)"),
-        Line::from("  A           Auto-categorize uncategorized mods"),
-        Line::from("  Shift+A     Force recategorize ALL mods"),
-        Line::from("  s           Auto-sort by category"),
-        Line::from(""),
-        Line::from("Browse/Search Nexus Mods (press 'b' from Mods):"),
-        Line::from("  s           Start search"),
-        Line::from("  f           Cycle sort (Relevance/Downloads/Endorsements/Updated)"),
-        Line::from("  n/p         Next/previous page"),
-        Line::from("  PgDn/PgUp   Next/previous page"),
-        Line::from("  j/k         Navigate results"),
-        Line::from("  Enter       Select mod and choose file to download"),
-        Line::from("  Esc         Return to Mods screen"),
-        Line::from(""),
-        Line::from("Load Order (press 'o' from Mods):"),
-        Line::from("  Enter       Toggle reorder mode"),
-        Line::from("  j/k         Move mod (reorder) / Navigate"),
-        Line::from("  J/K         Jump 5 positions"),
-        Line::from("  t/b         Move to top/bottom"),
-        Line::from("  s           Save load order"),
-        Line::from("  S           Auto-sort by category"),
-        Line::from(""),
-        Line::from("Plugin Management (F2):"),
-        Line::from("  /           Search plugins by filename"),
-        Line::from("  Enter       Toggle reorder mode"),
-        Line::from("  j/k         Move plugin (in reorder mode)"),
-        Line::from("  #           Go to specific position (in reorder mode)"),
-        Line::from("  Space       Toggle plugin enabled"),
-        Line::from("  a           Enable all plugins"),
-        Line::from("  n           Disable all plugins"),
-        Line::from("  s           Save plugin load order"),
-        Line::from("  S           Auto-sort (native Rust)"),
-        Line::from("  L           Auto-sort (LOOT CLI)"),
-        Line::from(""),
-        Line::from("General:"),
-        Line::from("  ?        Toggle help"),
-        Line::from("  q/Ctrl+C Quit"),
     ];
+    help_text.extend(lines.iter().map(|line| Line::from(*line)));
+    help_text.push(Line::from(""));
+    help_text.push(Line::from(Span::styled(
+        "n/Right/PgDn: next page  p/Left/PgUp: prev page  Esc/?: close",
+        Style::default().fg(Color::DarkGray),
+    )));
 
     let help = Paragraph::new(help_text)
         .block(
@@ -1410,6 +1715,152 @@ fn draw_mod_directory_input(f: &mut Frame, state: &AppState) {
         .block(
             Block::default()
                 .title(" Default Mod Directory ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Yellow)),
+        )
+        .alignment(Alignment::Left);
+
+    f.render_widget(popup, area);
+}
+
+/// Draw downloads directory input dialog
+fn draw_downloads_directory_input(f: &mut Frame, state: &AppState) {
+    let area = centered_rect(70, 30, f.area());
+
+    f.render_widget(Clear, area);
+
+    let input_text = if state.input_buffer.is_empty() {
+        "~/.local/share/modsanity/downloads".to_string()
+    } else {
+        state.input_buffer.clone()
+    };
+
+    let text = vec![
+        Line::from(""),
+        Line::from("Set downloads directory override:"),
+        Line::from(""),
+        Line::from(Span::styled(
+            input_text,
+            Style::default().fg(Color::Yellow),
+        )),
+        Line::from(""),
+        Line::from("Downloaded archives will be stored here."),
+        Line::from("Leave empty to use default."),
+        Line::from(""),
+        Line::from("[Enter] Save  [Esc] Cancel"),
+    ];
+
+    let popup = Paragraph::new(text)
+        .block(
+            Block::default()
+                .title(" Downloads Directory ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Yellow)),
+        )
+        .alignment(Alignment::Left);
+
+    f.render_widget(popup, area);
+}
+
+/// Draw staging directory input dialog
+fn draw_staging_directory_input(f: &mut Frame, state: &AppState) {
+    let area = centered_rect(70, 30, f.area());
+
+    f.render_widget(Clear, area);
+
+    let input_text = if state.input_buffer.is_empty() {
+        "~/.local/share/modsanity/mods".to_string()
+    } else {
+        state.input_buffer.clone()
+    };
+
+    let text = vec![
+        Line::from(""),
+        Line::from("Set staging/installed mods directory override:"),
+        Line::from(""),
+        Line::from(Span::styled(
+            input_text,
+            Style::default().fg(Color::Yellow),
+        )),
+        Line::from(""),
+        Line::from("Installed mods are extracted under this root (per game)."),
+        Line::from("Leave empty to use default."),
+        Line::from(""),
+        Line::from("[Enter] Save  [Esc] Cancel"),
+    ];
+
+    let popup = Paragraph::new(text)
+        .block(
+            Block::default()
+                .title(" Staging Directory ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Yellow)),
+        )
+        .alignment(Alignment::Left);
+
+    f.render_widget(popup, area);
+}
+
+/// Draw proton command input dialog
+fn draw_proton_command_input(f: &mut Frame, state: &AppState) {
+    let area = centered_rect(70, 28, f.area());
+    f.render_widget(Clear, area);
+
+    let input_text = if state.input_buffer.is_empty() {
+        "proton".to_string()
+    } else {
+        state.input_buffer.clone()
+    };
+
+    let text = vec![
+        Line::from(""),
+        Line::from("Set custom Proton command/path for external tools:"),
+        Line::from(""),
+        Line::from(Span::styled(input_text, Style::default().fg(Color::Yellow))),
+        Line::from(""),
+        Line::from("Examples: proton, /path/to/proton"),
+        Line::from("Tip: Use 'Proton Runtime' in Settings for Steam-managed Proton"),
+        Line::from("[Enter] Save  [Esc] Cancel"),
+    ];
+
+    let popup = Paragraph::new(text)
+        .block(
+            Block::default()
+                .title(" Proton Command ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Yellow)),
+        )
+        .alignment(Alignment::Left);
+
+    f.render_widget(popup, area);
+}
+
+/// Draw external tool path input dialog
+fn draw_external_tool_path_input(f: &mut Frame, state: &AppState) {
+    let area = centered_rect(75, 30, f.area());
+    f.render_widget(Clear, area);
+
+    let input_text = if state.input_buffer.is_empty() {
+        "C:\\\\Path\\\\Tool.exe".to_string()
+    } else {
+        state.input_buffer.clone()
+    };
+
+    let text = vec![
+        Line::from(""),
+        Line::from("Set Windows EXE path for selected tool:"),
+        Line::from(""),
+        Line::from(Span::styled(input_text, Style::default().fg(Color::Yellow))),
+        Line::from(""),
+        Line::from("This path is launched via Proton."),
+        Line::from("Leave empty to clear."),
+        Line::from("[Enter] Save  [Esc] Cancel"),
+    ];
+
+    let popup = Paragraph::new(text)
+        .block(
+            Block::default()
+                .title(" External Tool Path ")
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Yellow)),
         )
@@ -1817,6 +2268,70 @@ fn draw_categorization_progress(f: &mut Frame, progress: &crate::app::state::Cat
     f.render_widget(info, chunks[1]);
 }
 
+/// Draw import progress dialog
+fn draw_import_progress(f: &mut Frame, progress: &crate::app::state::ImportProgress) {
+    let area = centered_rect(70, 30, f.area());
+
+    f.render_widget(Clear, area);
+
+    // Calculate progress percentage
+    let percent = if progress.total_plugins > 0 {
+        ((progress.current_index as f64 / progress.total_plugins as f64) * 100.0) as u16
+    } else {
+        0
+    };
+
+    // Progress gauge
+    let gauge = Gauge::default()
+        .block(
+            Block::default()
+                .title(format!(" Importing Modlist - {} ", progress.stage))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan)),
+        )
+        .gauge_style(Style::default().fg(Color::Yellow).bg(Color::Black))
+        .percent(percent)
+        .label(format!(
+            "{}/{} plugins",
+            progress.current_index,
+            progress.total_plugins
+        ));
+
+    // Split area for gauge and current plugin info
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),  // Gauge
+            Constraint::Min(1),     // Info text
+        ])
+        .split(area);
+
+    f.render_widget(gauge, chunks[0]);
+
+    // Current plugin info
+    let info_text = vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            "Matching plugin:",
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::from(Span::styled(
+            truncate_filename(&progress.current_plugin_name, 60),
+            Style::default().fg(Color::White),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Searching NexusMods for matches...",
+            Style::default().fg(Color::DarkGray),
+        )),
+    ];
+
+    let info = Paragraph::new(info_text)
+        .alignment(Alignment::Center);
+
+    f.render_widget(info, chunks[1]);
+}
+
 /// Draw browse/search screen
 fn draw_browse_screen(f: &mut Frame, state: &AppState, area: Rect) {
     let chunks = Layout::default()
@@ -1958,7 +2473,9 @@ fn draw_browse_screen(f: &mut Frame, state: &AppState, area: Rect) {
             .block(Block::default().title(title).borders(Borders::ALL))
             .highlight_style(Style::default().add_modifier(Modifier::BOLD));
 
-        f.render_widget(list, result_chunks[0]);
+        let mut list_state = ratatui::widgets::ListState::default();
+        list_state.select(Some(state.selected_browse_index));
+        f.render_stateful_widget(list, result_chunks[0], &mut list_state);
     }
 
     // Details panel
@@ -2089,7 +2606,9 @@ fn draw_file_picker(f: &mut Frame, state: &AppState) {
         )
         .highlight_style(Style::default().add_modifier(Modifier::BOLD));
 
-    f.render_widget(list, area);
+    let mut list_state = ratatui::widgets::ListState::default();
+    list_state.select(Some(state.selected_file_index));
+    f.render_stateful_widget(list, area, &mut list_state);
 }
 
 /// Draw download progress overlay
@@ -2431,4 +2950,763 @@ fn draw_load_order_detail(f: &mut Frame, state: &AppState, area: Rect) {
         .wrap(Wrap { trim: true });
 
     f.render_widget(panel, area);
+}
+
+/// Draw import file path input dialog
+fn draw_import_file_input(f: &mut Frame, state: &AppState) {
+    let area = centered_rect(70, 30, f.area());
+
+    f.render_widget(Clear, area);
+
+    let input_text = if state.input_buffer.is_empty() {
+        "Enter path...".to_string()
+    } else {
+        state.input_buffer.clone()
+    };
+
+    let text = vec![
+        Line::from(""),
+        Line::from("Enter path to modlist.txt:"),
+        Line::from(""),
+        Line::from(Span::styled(
+            input_text,
+            Style::default().fg(Color::Yellow),
+        )),
+        Line::from(""),
+        Line::from("This should be the path to your MO2 modlist.txt file."),
+        Line::from("Example: ~/MO2/profiles/Default/modlist.txt"),
+        Line::from(""),
+        Line::from("[Enter] Confirm  [Esc] Cancel"),
+    ];
+
+    let popup = Paragraph::new(text)
+        .block(
+            Block::default()
+                .title(" Import Modlist ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Yellow)),
+        )
+        .alignment(Alignment::Left);
+
+    f.render_widget(popup, area);
+}
+
+/// Draw import screen (file selection)
+fn draw_import_screen(f: &mut Frame, state: &AppState, area: Rect) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(7),  // Instructions
+            Constraint::Length(3),  // File path input
+            Constraint::Min(5),     // Recent imports
+        ])
+        .split(area);
+
+    // Instructions
+    let instructions = vec![
+        Line::from(" Import MO2 Modlist ").style(Style::default().add_modifier(Modifier::BOLD)),
+        Line::from(""),
+        Line::from("  This feature imports a Mod Organizer 2 modlist.txt file,"),
+        Line::from("  automatically matches plugins to NexusMods, and creates"),
+        Line::from("  a download queue for batch installation."),
+    ];
+    let instructions_widget = Paragraph::new(instructions)
+        .block(Block::default().borders(Borders::ALL));
+    f.render_widget(instructions_widget, chunks[0]);
+
+    // File path input
+    let input_text = if state.import_file_path.is_empty() {
+        "Enter path to modlist.txt..."
+    } else {
+        &state.import_file_path
+    };
+    let input_widget = Paragraph::new(input_text)
+        .block(Block::default()
+            .title(" Modlist File Path (i to edit, Enter to import) ")
+            .borders(Borders::ALL));
+    f.render_widget(input_widget, chunks[1]);
+
+    // Recent imports placeholder
+    let recent = vec![
+        Line::from(" Recent Imports: "),
+        Line::from(""),
+        Line::from("  No recent imports"),
+    ];
+    let recent_widget = Paragraph::new(recent)
+        .block(Block::default().borders(Borders::ALL));
+    f.render_widget(recent_widget, chunks[2]);
+}
+
+/// Draw import review screen (showing matched mods)
+fn draw_import_review_screen(f: &mut Frame, state: &AppState, area: Rect) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),   // Summary
+            Constraint::Min(10),     // Results list
+            Constraint::Length(8),   // Details/alternatives
+        ])
+        .split(area);
+
+    // Summary
+    let auto_matched = state.import_results.iter().filter(|r| r.confidence.is_high()).count();
+    let needs_review = state.import_results.iter().filter(|r| r.confidence.needs_review()).count();
+    let no_matches = state.import_results.iter().filter(|r| r.confidence.is_none()).count();
+
+    let summary = format!(
+        " Total: {} | Auto-matched: {} | Needs Review: {} | No Matches: {} ",
+        state.import_results.len(), auto_matched, needs_review, no_matches
+    );
+    let summary_widget = Paragraph::new(summary)
+        .block(Block::default()
+            .title(" Import Results ")
+            .borders(Borders::ALL))
+        .style(Style::default().add_modifier(Modifier::BOLD));
+    f.render_widget(summary_widget, chunks[0]);
+
+    // Results list
+    let items: Vec<ListItem> = state
+        .import_results
+        .iter()
+        .enumerate()
+        .map(|(i, result)| {
+            let icon = if result.confidence.is_high() {
+                "✓"
+            } else if result.confidence.needs_review() {
+                "⚠"
+            } else {
+                "!"
+            };
+
+            let mod_name = if let Some(m) = &result.best_match {
+                &m.name
+            } else {
+                "<no match>"
+            };
+
+            let style = if i == state.selected_import_index {
+                Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+
+            ListItem::new(format!(
+                " {} {} → {}",
+                icon, result.plugin.plugin_name, mod_name
+            ))
+            .style(style)
+        })
+        .collect();
+
+    let list = List::new(items)
+        .block(Block::default()
+            .title(" Matches (↑/↓ to navigate, Enter to create queue) ")
+            .borders(Borders::ALL));
+    let mut list_state = ratatui::widgets::ListState::default();
+    list_state.select(Some(state.selected_import_index));
+    f.render_stateful_widget(list, chunks[1], &mut list_state);
+
+    // Details for selected
+    if let Some(result) = state.import_results.get(state.selected_import_index) {
+        let mut details = vec![
+            Line::from(format!("Plugin: {}", result.plugin.plugin_name)),
+            Line::from(format!("Extracted: {}", result.mod_name)),
+        ];
+
+        if let Some(best) = &result.best_match {
+            details.push(Line::from(format!("Match: {} (by {})", best.name, best.author)));
+            details.push(Line::from(format!("Confidence: {:.0}%", result.confidence.score() * 100.0)));
+            details.push(Line::from(format!("Downloads: {}", best.downloads)));
+        } else {
+            details.push(Line::from("No matches found - will need manual resolution"));
+        }
+
+        if !result.alternatives.is_empty() {
+            details.push(Line::from(format!("\n{} alternative(s) available", result.alternatives.len())));
+        }
+
+        let details_widget = Paragraph::new(details)
+            .block(Block::default()
+                .title(" Details ")
+                .borders(Borders::ALL));
+        f.render_widget(details_widget, chunks[2]);
+    }
+}
+
+/// Draw download queue screen
+fn draw_queue_screen(f: &mut Frame, state: &AppState, area: Rect) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),   // Status bar
+            Constraint::Min(10),     // Queue list
+            Constraint::Length(6),   // Selected item details
+        ])
+        .split(area);
+
+    // Status bar
+    let pending = state.queue_entries.iter().filter(|e| matches!(e.status, crate::queue::QueueStatus::Pending | crate::queue::QueueStatus::Matched)).count();
+    let downloading = state.queue_entries.iter().filter(|e| matches!(e.status, crate::queue::QueueStatus::Downloading)).count();
+    let completed = state.queue_entries.iter().filter(|e| matches!(e.status, crate::queue::QueueStatus::Completed)).count();
+    let failed = state.queue_entries.iter().filter(|e| matches!(e.status, crate::queue::QueueStatus::Failed)).count();
+
+    let status_text = if state.queue_processing {
+        format!(
+            " Processing: {} pending, {} downloading, {} completed, {} failed | ESC to stop ",
+            pending, downloading, completed, failed
+        )
+    } else {
+        format!(
+            " Queue: {} pending, {} completed, {} failed | p to process, c to clear ",
+            pending, completed, failed
+        )
+    };
+
+    let status_widget = Paragraph::new(status_text)
+        .block(Block::default()
+            .title(" Download Queue ")
+            .borders(Borders::ALL))
+        .style(Style::default().add_modifier(Modifier::BOLD));
+    f.render_widget(status_widget, chunks[0]);
+
+    // Queue list
+    let items: Vec<ListItem> = state
+        .queue_entries
+        .iter()
+        .enumerate()
+        .map(|(i, entry)| {
+            let status_icon = match entry.status {
+                crate::queue::QueueStatus::Completed => "✓",
+                crate::queue::QueueStatus::Failed => "✗",
+                crate::queue::QueueStatus::Downloading => "↓",
+                crate::queue::QueueStatus::NeedsReview => "⚠",
+                crate::queue::QueueStatus::NeedsManual => "!",
+                _ => "○",
+            };
+
+            let progress_bar = if entry.progress > 0.0 {
+                format!(" [{:3.0}%]", entry.progress * 100.0)
+            } else {
+                String::new()
+            };
+
+            let style = if i == state.selected_queue_index {
+                Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+
+            ListItem::new(format!(
+                " {} {} → {}{}",
+                status_icon, entry.plugin_name, entry.mod_name, progress_bar
+            ))
+            .style(style)
+        })
+        .collect();
+
+    let list = List::new(items)
+        .block(Block::default()
+            .title(" Queue Entries (↑/↓ to navigate) ")
+            .borders(Borders::ALL));
+    let mut list_state = ratatui::widgets::ListState::default();
+    list_state.select(Some(state.selected_queue_index));
+    f.render_stateful_widget(list, chunks[1], &mut list_state);
+
+    // Selected entry details
+    if let Some(entry) = state.queue_entries.get(state.selected_queue_index) {
+        let mut details = vec![
+            Line::from(format!("Plugin: {}", entry.plugin_name)),
+            Line::from(format!("Mod: {}", entry.mod_name)),
+            Line::from(format!("Status: {:?}", entry.status)),
+        ];
+
+        if let Some(conf) = entry.match_confidence {
+            details.push(Line::from(format!("Confidence: {:.0}%", conf * 100.0)));
+        }
+
+        if let Some(err) = &entry.error {
+            details.push(Line::from(format!("Error: {}", err)).style(Style::default().fg(Color::Red)));
+        }
+
+        if !entry.alternatives.is_empty() {
+            details.push(Line::from(format!(
+                "Alternative: {}/{} (h/l to cycle, m to apply)",
+                state.selected_queue_alternative_index.saturating_add(1).min(entry.alternatives.len()),
+                entry.alternatives.len()
+            )));
+            if let Some(alt) = entry.alternatives.get(state.selected_queue_alternative_index.min(entry.alternatives.len() - 1)) {
+                details.push(Line::from(format!("  {} (id: {})", alt.name, alt.mod_id)));
+            }
+        } else if matches!(
+            entry.status,
+            crate::queue::QueueStatus::NeedsManual | crate::queue::QueueStatus::NeedsReview
+        ) {
+            details.push(Line::from("No alternatives. Press M to enter Nexus mod ID."));
+        }
+
+        let details_widget = Paragraph::new(details)
+            .block(Block::default()
+                .title(" Details ")
+                .borders(Borders::ALL));
+        f.render_widget(details_widget, chunks[2]);
+    }
+}
+
+fn draw_queue_manual_mod_id_input(f: &mut Frame, state: &AppState) {
+    let area = centered_rect(60, 28, f.area());
+    f.render_widget(Clear, area);
+
+    let input_text = if state.input_buffer.is_empty() {
+        "Enter Nexus mod ID...".to_string()
+    } else {
+        state.input_buffer.clone()
+    };
+
+    let text = vec![
+        Line::from(""),
+        Line::from("Set Nexus mod ID for selected queue entry:"),
+        Line::from(""),
+        Line::from(Span::styled(
+            format!("> {}", input_text),
+            Style::default().fg(Color::Yellow),
+        )),
+        Line::from(""),
+        Line::from("Enter: apply  Esc: cancel"),
+    ];
+
+    let popup = Paragraph::new(text)
+        .block(
+            Block::default()
+                .title(" Queue Manual Resolve ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan)),
+        )
+        .wrap(Wrap { trim: true });
+
+    f.render_widget(popup, area);
+}
+
+/// Draw save modlist input dialog
+fn draw_save_modlist_input(f: &mut Frame, state: &AppState) {
+    let area = centered_rect(70, 40, f.area());
+    f.render_widget(Clear, area);
+
+    let format_hint = match state.modlist_save_format.as_str() {
+        "mo2" => "MO2 modlist.txt (plugin list only)",
+        _ => "Native JSON (mods + plugins + metadata)",
+    };
+
+    let input_text = if state.input_buffer.is_empty() {
+        "Enter path...".to_string()
+    } else {
+        state.input_buffer.clone()
+    };
+
+    let text = vec![
+        Line::from(""),
+        Line::from(" Save Modlist ").style(Style::default().add_modifier(Modifier::BOLD)),
+        Line::from(""),
+        Line::from(format!("Format: {} [Tab to toggle]", format_hint)),
+        Line::from(""),
+        Line::from("Path:"),
+        Line::from(Span::styled(
+            input_text,
+            Style::default().fg(Color::Yellow),
+        )),
+        Line::from(""),
+        Line::from("Examples:"),
+        Line::from("  ~/modlists/my-setup.json"),
+        Line::from("  ~/backups/skyrim-2024.json"),
+        Line::from("  ~/modlists/fallout4.txt (for MO2 format)"),
+        Line::from(""),
+        Line::from("[Enter] Save  [Tab] Toggle Format  [Esc] Cancel"),
+    ];
+
+    let popup = Paragraph::new(text)
+        .block(
+            Block::default()
+                .title(" Save Modlist ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan)),
+        )
+        .alignment(Alignment::Left);
+
+    f.render_widget(popup, area);
+}
+
+/// Draw load modlist input dialog
+fn draw_load_modlist_input(f: &mut Frame, state: &AppState) {
+    let area = centered_rect(70, 40, f.area());
+    f.render_widget(Clear, area);
+
+    let input_text = if state.input_buffer.is_empty() {
+        "Enter path...".to_string()
+    } else {
+        state.input_buffer.clone()
+    };
+
+    let text = vec![
+        Line::from(""),
+        Line::from(" Load Modlist ").style(Style::default().add_modifier(Modifier::BOLD)),
+        Line::from(""),
+        Line::from("Path:"),
+        Line::from(Span::styled(
+            input_text,
+            Style::default().fg(Color::Yellow),
+        )),
+        Line::from(""),
+        Line::from("Supports:"),
+        Line::from("  • Native ModSanity JSON format"),
+        Line::from("  • MO2 modlist.txt format"),
+        Line::from(""),
+        Line::from("Format will be auto-detected."),
+        Line::from(""),
+        Line::from("[Enter] Load  [Esc] Cancel"),
+    ];
+
+    let popup = Paragraph::new(text)
+        .block(
+            Block::default()
+                .title(" Load Modlist ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan)),
+        )
+        .alignment(Alignment::Left);
+
+    f.render_widget(popup, area);
+}
+
+/// Draw modlist review screen
+fn draw_modlist_review_screen(f: &mut Frame, state: &AppState, area: Rect) {
+    let review = match &state.modlist_review_data {
+        Some(r) => r,
+        None => {
+            let p = Paragraph::new("No modlist loaded")
+                .block(Block::default().borders(Borders::ALL));
+            f.render_widget(p, area);
+            return;
+        }
+    };
+
+    // Split into 3 sections
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(9),      // Summary
+            Constraint::Percentage(50), // Needs download list
+            Constraint::Percentage(50), // Already installed list
+        ])
+        .split(area);
+
+    // Summary section
+    let summary_text = vec![
+        Line::from(format!("Modlist: {}", review.source_path)),
+        Line::from(format!("Format: {}", review.format)),
+        Line::from(""),
+        Line::from(format!("Total mods: {}", review.total_mods)),
+        Line::from(Span::styled(
+            format!("  Already installed: {}", review.already_installed.len()),
+            Style::default().fg(Color::Green),
+        )),
+        Line::from(Span::styled(
+            format!("  Needs download: {}", review.needs_download.len()),
+            Style::default().fg(Color::Yellow),
+        )),
+        Line::from(""),
+        Line::from("[Enter] Queue Downloads  [Esc] Cancel"),
+    ];
+
+    let summary = Paragraph::new(summary_text)
+        .block(Block::default()
+            .title(" Modlist Review ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan)));
+    f.render_widget(summary, chunks[0]);
+
+    // Needs download list (scrollable)
+    let download_items: Vec<ListItem> = review.needs_download
+        .iter()
+        .enumerate()
+        .map(|(idx, entry)| {
+            let style = if idx == state.selected_modlist_entry {
+                Style::default().bg(Color::DarkGray).fg(Color::Yellow)
+            } else {
+                Style::default()
+            };
+
+            let line = format!("  {} v{}", entry.name, entry.version);
+            ListItem::new(line).style(style)
+        })
+        .collect();
+
+    let download_list = List::new(download_items)
+        .block(Block::default()
+            .title(format!(" Mods to Download ({}) ", review.needs_download.len()))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Yellow)));
+    let mut list_state = ratatui::widgets::ListState::default();
+    list_state.select(Some(state.selected_modlist_entry));
+    f.render_stateful_widget(download_list, chunks[1], &mut list_state);
+
+    // Already installed list
+    let installed_items: Vec<ListItem> = review.already_installed
+        .iter()
+        .map(|name| {
+            ListItem::new(format!("  ✓ {}", name))
+                .style(Style::default().fg(Color::Green))
+        })
+        .collect();
+
+    let installed_list = List::new(installed_items)
+        .block(Block::default()
+            .title(format!(" Already Installed ({}) ", review.already_installed.len()))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Green)));
+    f.render_widget(installed_list, chunks[2]);
+}
+
+/// Draw catalog search input overlay
+fn draw_catalog_search_input(f: &mut Frame, state: &AppState) {
+    let area = centered_rect(60, 20, f.area());
+    f.render_widget(Clear, area);
+
+    let input_text = if state.input_buffer.is_empty() {
+        "Enter search query...".to_string()
+    } else {
+        state.input_buffer.clone()
+    };
+
+    let text = vec![
+        Line::from(""),
+        Line::from(" Search Catalog ").style(Style::default().add_modifier(Modifier::BOLD)),
+        Line::from(""),
+        Line::from(Span::styled(
+            input_text,
+            Style::default().fg(Color::Yellow),
+        )),
+        Line::from(""),
+        Line::from("[Enter] Search  [Esc] Cancel"),
+    ];
+
+    let popup = Paragraph::new(text)
+        .block(
+            Block::default()
+                .title(" Catalog Search ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan)),
+        )
+        .alignment(Alignment::Center);
+
+    f.render_widget(popup, area);
+}
+
+/// Draw modlist name input overlay
+fn draw_modlist_name_input(f: &mut Frame, state: &AppState) {
+    let area = centered_rect(60, 20, f.area());
+    f.render_widget(Clear, area);
+
+    let input_text = if state.input_buffer.is_empty() {
+        "Enter modlist name...".to_string()
+    } else {
+        state.input_buffer.clone()
+    };
+
+    let text = vec![
+        Line::from(""),
+        Line::from(" New Modlist ").style(Style::default().add_modifier(Modifier::BOLD)),
+        Line::from(""),
+        Line::from(Span::styled(
+            input_text,
+            Style::default().fg(Color::Yellow),
+        )),
+        Line::from(""),
+        Line::from("[Enter] Create  [Esc] Cancel"),
+    ];
+
+    let popup = Paragraph::new(text)
+        .block(
+            Block::default()
+                .title(" Create Modlist ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan)),
+        )
+        .alignment(Alignment::Center);
+
+    f.render_widget(popup, area);
+}
+
+/// Draw the modlist editor screen
+fn draw_modlist_editor_screen(f: &mut Frame, state: &AppState, area: Rect) {
+    use crate::app::state::ModlistEditorMode;
+
+    match state.modlist_editor_mode {
+        ModlistEditorMode::ListPicker => {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3),  // Title
+                    Constraint::Min(5),    // List
+                    Constraint::Length(3),  // Help
+                ])
+                .split(area);
+
+            // Title
+            let title_text = if state.modlist_picker_for_loading {
+                "Load Saved Modlist"
+            } else {
+                "Saved Modlists"
+            };
+            let title = Paragraph::new(title_text)
+                .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+                .alignment(Alignment::Center)
+                .block(Block::default().borders(Borders::ALL));
+            f.render_widget(title, chunks[0]);
+
+            // Modlist list
+            if state.saved_modlists.is_empty() {
+                let empty = Paragraph::new("No saved modlists. Import a modlist via F5 or press 'n' to create one.")
+                    .alignment(Alignment::Center)
+                    .block(Block::default().borders(Borders::ALL).title(" Modlists "));
+                f.render_widget(empty, chunks[1]);
+            } else {
+                let items: Vec<ListItem> = state.saved_modlists
+                    .iter()
+                    .enumerate()
+                    .map(|(i, ml)| {
+                        let style = if i == state.selected_saved_modlist_index {
+                            Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default()
+                        };
+                        let desc = ml.description.as_deref().unwrap_or("");
+                        let source = ml.source_file.as_deref().unwrap_or("manual");
+                        ListItem::new(format!(" {} - {} (from: {})", ml.name, desc, source)).style(style)
+                    })
+                    .collect();
+
+                let list = List::new(items)
+                    .block(Block::default()
+                        .title(format!(" Modlists ({}) ", state.saved_modlists.len()))
+                        .borders(Borders::ALL))
+                    .highlight_style(Style::default().add_modifier(Modifier::BOLD));
+
+                let mut list_state = ratatui::widgets::ListState::default();
+                list_state.select(Some(state.selected_saved_modlist_index));
+                f.render_stateful_widget(list, chunks[1], &mut list_state);
+            }
+
+            // Help
+            let help_text = if state.modlist_picker_for_loading {
+                "[Enter] Load | [f] File path | [n] New | [d] Delete | [r] Rename | Esc: Back | q: Quit"
+            } else {
+                "[Enter] Open | [n] New | [d] Delete | [r] Rename | Esc: Back | q: Quit"
+            };
+            let help = Paragraph::new(help_text)
+                .style(Style::default().fg(Color::Gray))
+                .alignment(Alignment::Center)
+                .block(Block::default().borders(Borders::ALL));
+            f.render_widget(help, chunks[2]);
+        }
+        ModlistEditorMode::EntryEditor => {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3),  // Title
+                    Constraint::Min(5),    // Content
+                    Constraint::Length(3),  // Help
+                ])
+                .split(area);
+
+            // Title
+            let modlist_name = state.saved_modlists
+                .iter()
+                .find(|ml| ml.id == state.active_modlist_id)
+                .map(|ml| ml.name.as_str())
+                .unwrap_or("Unknown");
+
+            let title = Paragraph::new(format!("Editing: {}", modlist_name))
+                .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+                .alignment(Alignment::Center)
+                .block(Block::default().borders(Borders::ALL));
+            f.render_widget(title, chunks[0]);
+
+            // Content: entry list (left) + details (right)
+            let content_chunks = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
+                .split(chunks[1]);
+
+            // Entry list
+            let entries = &state.modlist_editor_entries;
+            if entries.is_empty() {
+                let empty = Paragraph::new("No entries in this modlist.")
+                    .alignment(Alignment::Center)
+                    .block(Block::default().borders(Borders::ALL).title(" Entries "));
+                f.render_widget(empty, content_chunks[0]);
+            } else {
+                let items: Vec<ListItem> = entries
+                    .iter()
+                    .enumerate()
+                    .map(|(i, entry)| {
+                        let style = if i == state.selected_modlist_editor_index {
+                            Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default()
+                        };
+                        let status = if entry.enabled { "[*]" } else { "[ ]" };
+                        let nexus_id = entry.nexus_mod_id
+                            .map(|id| format!(" ({})", id))
+                            .unwrap_or_default();
+                        ListItem::new(format!(" {} {}{}", status, entry.name, nexus_id)).style(style)
+                    })
+                    .collect();
+
+                let list = List::new(items)
+                    .block(Block::default()
+                        .title(format!(" Entries ({}) ", entries.len()))
+                        .borders(Borders::ALL))
+                    .highlight_style(Style::default().add_modifier(Modifier::BOLD));
+
+                let mut list_state = ratatui::widgets::ListState::default();
+                list_state.select(Some(state.selected_modlist_editor_index));
+                f.render_stateful_widget(list, content_chunks[0], &mut list_state);
+            }
+
+            // Details panel
+            if let Some(entry) = entries.get(state.selected_modlist_editor_index) {
+                let confidence = entry.match_confidence
+                    .map(|c| format!("{:.0}%", c * 100.0))
+                    .unwrap_or_else(|| "N/A".to_string());
+
+                let details = vec![
+                    Line::from(Span::styled(&entry.name, Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan))),
+                    Line::from(""),
+                    Line::from(format!("Enabled:    {}", if entry.enabled { "Yes" } else { "No" })),
+                    Line::from(format!("Position:   {}", entry.position)),
+                    Line::from(format!("Nexus ID:   {}", entry.nexus_mod_id.map(|id| id.to_string()).unwrap_or_else(|| "None".to_string()))),
+                    Line::from(format!("Plugin:     {}", entry.plugin_name.as_deref().unwrap_or("None"))),
+                    Line::from(format!("Confidence: {}", confidence)),
+                    Line::from(format!("Author:     {}", entry.author.as_deref().unwrap_or("Unknown"))),
+                    Line::from(format!("Version:    {}", entry.version.as_deref().unwrap_or("Unknown"))),
+                ];
+
+                let detail_widget = Paragraph::new(details)
+                    .block(Block::default().title(" Entry Details ").borders(Borders::ALL))
+                    .wrap(Wrap { trim: true });
+                f.render_widget(detail_widget, content_chunks[1]);
+            } else {
+                let empty_details = Paragraph::new("Select an entry to view details")
+                    .alignment(Alignment::Center)
+                    .block(Block::default().title(" Entry Details ").borders(Borders::ALL));
+                f.render_widget(empty_details, content_chunks[1]);
+            }
+
+            // Help
+            let help = Paragraph::new("[Space] Toggle | [d] Delete | [J/K] Reorder | Esc: Back to list")
+                .style(Style::default().fg(Color::Gray))
+                .alignment(Alignment::Center)
+                .block(Block::default().borders(Borders::ALL));
+            f.render_widget(help, chunks[2]);
+        }
+    }
 }

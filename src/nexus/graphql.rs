@@ -309,7 +309,8 @@ impl NexusClient {
             #[serde(rename = "modName")]
             mod_name: String,
             notes: Option<String>,
-            url: String,
+            #[serde(rename = "url")]
+            _url: String,
             #[serde(rename = "externalRequirement")]
             external_requirement: bool,
         }

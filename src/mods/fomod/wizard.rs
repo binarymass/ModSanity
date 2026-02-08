@@ -1,7 +1,7 @@
 //! FOMOD installation wizard logic
 
 use super::{
-    ConditionEvaluator, FileItem, FolderItem, InstallStep, ModuleConfig, OptionGroup, Plugin,
+    ConditionEvaluator, ModuleConfig, Plugin,
 };
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};

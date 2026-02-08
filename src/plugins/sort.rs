@@ -9,14 +9,14 @@ use std::path::Path;
 
 /// Sort plugins using dependency-based topological sort
 /// This ensures:
-/// 1. Base game masters (Skyrim.esm, etc.) load first
-/// 2. Anniversary Edition content loads after base game
+/// 1. Base game official masters load first (game-aware)
+/// 2. Skyrim AE content loads after base game (Skyrim-specific)
 /// 3. Mod masters load after official content
 /// 4. Plugins load after their masters (dependencies)
 /// 5. Light plugins (.esl) are handled correctly
 /// 6. LOOT masterlist rules are applied (load_after rules and groups)
 /// 7. Plugins without dependencies are ordered alphabetically for consistency
-pub fn optimize_load_order(plugins: &mut [PluginInfo]) -> Result<()> {
+pub fn optimize_load_order(plugins: &mut [PluginInfo], game_id: &str) -> Result<()> {
     // Try to load the masterlist (optional)
     let metadata_map = load_masterlist_if_exists();
 
@@ -24,7 +24,7 @@ pub fn optimize_load_order(plugins: &mut [PluginInfo]) -> Result<()> {
     let graph = build_dependency_graph(plugins, metadata_map.as_ref());
 
     // Perform topological sort
-    let sorted_indices = topological_sort(&graph, plugins, metadata_map.as_ref())?;
+    let sorted_indices = topological_sort(&graph, plugins, metadata_map.as_ref(), game_id)?;
 
     // Reorder the plugins slice based on sorted indices
     let mut sorted_plugins: Vec<PluginInfo> = sorted_indices
@@ -116,21 +116,25 @@ fn topological_sort(
     graph: &HashMap<usize, Vec<usize>>,
     plugins: &[PluginInfo],
     metadata_map: Option<&HashMap<String, super::masterlist::PluginMetadata>>,
+    game_id: &str,
 ) -> Result<Vec<usize>> {
     let n = plugins.len();
-    let mut in_degree = vec![0; n];
+    let mut in_degree = vec![0usize; n];
     let mut sorted = Vec::new();
 
-    // Calculate in-degrees (number of incoming edges)
-    for deps in graph.values() {
+    // Build reverse graph: reverse_graph[dep] = list of nodes that depend on dep
+    // graph[i] = nodes that i depends on, so if i depends on dep, dep must come first
+    let mut reverse_graph: HashMap<usize, Vec<usize>> = HashMap::new();
+    for (&i, deps) in graph.iter() {
+        in_degree[i] = deps.len();
         for &dep in deps {
-            in_degree[dep] += 1;
+            reverse_graph.entry(dep).or_default().push(i);
         }
     }
 
     // Create priority groups with LOOT group integration:
-    // Priority 0: Base game masters (Skyrim.esm, Update.esm, etc.)
-    // Priority 1: Anniversary Edition content
+    // Priority 0: Official base masters/content (game-aware)
+    // Priority 1: Skyrim Anniversary Edition content
     // Priority 2-4: Early loaders group (from LOOT)
     // Priority 5: Mod masters (.esm files from mods) - default group
     // Priority 6: Light plugins (.esl) - default group
@@ -138,15 +142,12 @@ fn topological_sort(
     // Priority 8-10: Late loaders group (from LOOT)
     let get_priority = |plugin: &PluginInfo| -> u8 {
         use super::PluginType;
-        use crate::games::skyrimse::SkyrimSE;
-
-        // Check if it's a base game master
-        if SkyrimSE::is_base_master(&plugin.filename) {
+        if is_official_master(game_id, &plugin.filename) {
             return 0;
         }
 
-        // Check if it's Anniversary Edition content
-        if SkyrimSE::is_ae_content(&plugin.filename) {
+        // Skyrim-specific AE content handling
+        if is_skyrim_ae_content(game_id, &plugin.filename) {
             return 1;
         }
 
@@ -168,16 +169,16 @@ fn topological_sort(
         }
     };
 
-    // Start with nodes that have no dependencies
+    // Start with nodes that have no dependencies (in_degree == 0)
     let mut queue: Vec<usize> = (0..n)
         .filter(|&i| in_degree[i] == 0)
         .collect();
 
-    // Sort queue by priority and then alphabetically for deterministic results
+    // Sort queue by priority (descending) so lowest priority pops last from the end
     queue.sort_by(|&a, &b| {
-        let priority_cmp = get_priority(&plugins[a]).cmp(&get_priority(&plugins[b]));
+        let priority_cmp = get_priority(&plugins[b]).cmp(&get_priority(&plugins[a]));
         if priority_cmp == std::cmp::Ordering::Equal {
-            plugins[a].filename.to_lowercase().cmp(&plugins[b].filename.to_lowercase())
+            plugins[b].filename.to_lowercase().cmp(&plugins[a].filename.to_lowercase())
         } else {
             priority_cmp
         }
@@ -186,17 +187,17 @@ fn topological_sort(
     while let Some(current) = queue.pop() {
         sorted.push(current);
 
-        // Process nodes that depend on current
-        if let Some(deps) = graph.get(&current) {
-            for &dependent in deps {
+        // Process nodes that depend on current (current is now resolved)
+        if let Some(dependents) = reverse_graph.get(&current) {
+            for &dependent in dependents {
                 in_degree[dependent] -= 1;
                 if in_degree[dependent] == 0 {
-                    // Insert in sorted position based on priority
+                    // Insert in sorted position (descending priority so pop gives lowest)
                     let pos = queue
                         .binary_search_by(|&probe| {
                             let priority_cmp = get_priority(&plugins[probe])
                                 .cmp(&get_priority(&plugins[dependent]))
-                                .reverse(); // Reverse for descending order
+                                .reverse();
                             if priority_cmp == std::cmp::Ordering::Equal {
                                 plugins[probe]
                                     .filename
@@ -222,8 +223,56 @@ fn topological_sort(
     Ok(sorted)
 }
 
+fn is_official_master(game_id: &str, filename: &str) -> bool {
+    let lower = filename.to_ascii_lowercase();
+    match game_id {
+        "skyrimse" | "skyrimvr" => {
+            use crate::games::skyrimse::SkyrimSE;
+            SkyrimSE::is_base_master(&lower)
+        }
+        "fallout4" | "fallout4vr" => matches!(
+            lower.as_str(),
+            "fallout4.esm"
+                | "dlcrobot.esm"
+                | "dlcworkshop01.esm"
+                | "dlccoast.esm"
+                | "dlcworkshop02.esm"
+                | "dlcworkshop03.esm"
+                | "dlcnukaworld.esm"
+                | "dlcultrahighresolution.esm"
+        ),
+        "starfield" => matches!(
+            lower.as_str(),
+            "starfield.esm"
+                | "constellation.esm"
+                | "oldmars.esm"
+                | "blueprintships-starfield.esm"
+                | "sfbgs003.esm"
+                | "sfbgs004.esm"
+                | "sfbgs006.esm"
+                | "sfbgs007.esm"
+                | "sfbgs008.esm"
+                | "sfbgs021.esm"
+                | "sfbgs023.esm"
+                | "sfbgs024.esm"
+                | "sfbgs026.esm"
+                | "sfbgs028.esm"
+                | "sfbgs029.esm"
+        ),
+        _ => false,
+    }
+}
+
+fn is_skyrim_ae_content(game_id: &str, filename: &str) -> bool {
+    if !matches!(game_id, "skyrimse" | "skyrimvr") {
+        return false;
+    }
+    use crate::games::skyrimse::SkyrimSE;
+    SkyrimSE::is_ae_content(filename)
+}
+
 /// Validate that the current load order satisfies all dependencies
-pub fn validate_load_order(plugins: &[PluginInfo]) -> Vec<String> {
+pub fn validate_load_order(plugins: &[PluginInfo], _game_id: &str) -> Vec<String> {
     let mut issues = Vec::new();
 
     // Build index map
@@ -286,7 +335,7 @@ mod tests {
             create_test_plugin("Skyrim.esm", PluginType::Master, vec![]),
         ];
 
-        optimize_load_order(&mut plugins).unwrap();
+        optimize_load_order(&mut plugins, "skyrimse").unwrap();
 
         assert_eq!(plugins[0].filename, "Skyrim.esm");
         assert_eq!(plugins[1].filename, "Plugin.esp");
@@ -299,7 +348,7 @@ mod tests {
             create_test_plugin("Skyrim.esm", PluginType::Master, vec![]),
         ];
 
-        let issues = validate_load_order(&plugins);
+        let issues = validate_load_order(&plugins, "skyrimse");
         assert!(!issues.is_empty()); // Plugin loads before its master
     }
 }

@@ -5,7 +5,6 @@
 use super::planner::InstallPlan;
 use crate::db::Database;
 use anyhow::{Context, Result};
-use std::collections::HashMap;
 
 /// Manager for FOMOD choice persistence
 pub struct FomodChoiceManager<'a> {
@@ -143,6 +142,7 @@ pub fn hash_module_config(config: &super::ModuleConfig) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     #[test]
     fn test_hash_stability() {

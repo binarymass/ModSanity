@@ -71,9 +71,19 @@ pub struct InstalledMod {
     pub priority: i32,
 
     pub nexus_mod_id: Option<i64>,
+    pub nexus_file_id: Option<i64>,
     pub file_count: i32,
     pub install_path: PathBuf,
     pub category_id: Option<i64>,
+}
+
+/// Summary of a staging rescan operation.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct RescanStats {
+    pub added: usize,
+    pub updated: usize,
+    pub unchanged: usize,
+    pub failed: usize,
 }
 
 impl From<ModRecord> for InstalledMod {
@@ -86,6 +96,7 @@ impl From<ModRecord> for InstalledMod {
             enabled: r.enabled,
             priority: r.priority,
             nexus_mod_id: r.nexus_mod_id,
+            nexus_file_id: r.nexus_file_id,
             file_count: r.file_count,
             install_path: PathBuf::from(r.install_path),
             category_id: r.category_id,
@@ -107,7 +118,7 @@ impl ModManager {
 
     /// Get staging directory for a game
     async fn staging_dir(&self, game_id: &str) -> PathBuf {
-        self.config.read().await.paths.game_mods_dir(game_id)
+        self.config.read().await.game_staging_dir(game_id)
     }
 
     /// List all installed mods for a game
@@ -215,8 +226,8 @@ impl ModManager {
             version: version.clone(),
             author: None,
             description: None,
-            nexus_mod_id: None,
-            nexus_file_id: None,
+            nexus_mod_id,
+            nexus_file_id,
             install_path: staging.to_string_lossy().to_string(),
             enabled: true,
             priority: self.next_priority(game_id).await?,
@@ -241,6 +252,9 @@ impl ModManager {
             .collect();
 
         self.db.insert_mod_files(mod_id, &file_records)?;
+        let plugin_files = plugin_filenames_from_mod_files(&file_records);
+        self.db
+            .replace_mod_plugins(mod_id, game_id, &plugin_files)?;
 
         let installed = InstalledMod {
             id: mod_id,
@@ -249,7 +263,8 @@ impl ModManager {
             author: None,
             enabled: true,
             priority: record.priority,
-            nexus_mod_id: None,
+            nexus_mod_id,
+            nexus_file_id,
             file_count: file_records.len() as i32,
             install_path: staging,
             category_id: None,
@@ -293,7 +308,7 @@ impl ModManager {
         &self,
         context: &FomodInstallContext,
         wizard: &fomod::WizardState,
-        progress_callback: Option<ProgressCallback>,
+        _progress_callback: Option<ProgressCallback>,
     ) -> Result<InstalledMod> {
         use fomod::{executor::FomodExecutor, planner::InstallPlan};
 
@@ -400,6 +415,9 @@ impl ModManager {
             .collect();
 
         self.db.insert_mod_files(mod_id, &file_records)?;
+        let plugin_files = plugin_filenames_from_mod_files(&file_records);
+        self.db
+            .replace_mod_plugins(mod_id, &context.game_id, &plugin_files)?;
 
         // Save FOMOD choices for re-run
         let profile_id = None; // TODO: Get current profile ID
@@ -414,6 +432,7 @@ impl ModManager {
             enabled: true,
             priority: context.priority,
             nexus_mod_id: None,
+            nexus_file_id: None,
             file_count: file_records.len() as i32,
             install_path: target_path,
             category_id: None,
@@ -450,7 +469,7 @@ impl ModManager {
         game_id: &str,
         mod_name: &str,
     ) -> Result<Vec<(String, String)>> {
-        use crate::plugins::{self, masterlist::{load_masterlist, build_metadata_map, get_requirements}};
+        use crate::plugins::masterlist::{build_metadata_map, get_requirements, load_masterlist};
         use std::path::Path;
 
         // Load masterlist
@@ -464,7 +483,7 @@ impl ModManager {
         };
 
         // Get mod's install path
-        let mod_record = self.db.get_mod(game_id, mod_name)?
+        let _mod_record = self.db.get_mod(game_id, mod_name)?
             .ok_or_else(|| anyhow::anyhow!("Mod '{}' not found", mod_name))?;
 
         let staging = self.staging_dir(game_id).await.join(mod_name);
@@ -594,7 +613,7 @@ impl ModManager {
         &self,
         game_id: &str,
         progress_callback: Option<Box<dyn Fn(usize, usize, String) + Send + Sync>>,
-    ) -> Result<(usize, usize)> {
+    ) -> Result<RescanStats> {
         let mods_dir = self.staging_dir(game_id).await;
 
         if !mods_dir.exists() {
@@ -611,8 +630,7 @@ impl ModManager {
 
         tracing::info!("Found {} mod directories to scan", total);
 
-        let mut imported = 0;
-        let mut skipped = 0;
+        let mut stats = RescanStats::default();
         let mut current = 0;
 
         // Second pass: process one directory at a time
@@ -653,55 +671,150 @@ impl ModManager {
 
             tracing::info!("Processing {}/{}: {}", current, total, mod_name);
 
-            // Parse name and version from directory name
-            let (name, version) = Self::parse_mod_name(&mod_name);
-
-            // Check if already in database
-            if self.db.get_mod(game_id, &name)?.is_some() {
-                tracing::info!("Mod '{}' already in database, skipping", name);
-                skipped += 1;
-                continue;
-            }
-
-            // Skip expensive file cataloging during rescan for speed
-            // The files are already on disk, we just need the mod record
-            // File counts will be 0, but this is much faster than walking directory trees
-
-            // Create database record
-            let now = chrono::Utc::now().to_rfc3339();
-            let record = ModRecord {
-                id: None,
-                game_id: game_id.to_string(),
-                name: name.clone(),
-                version: version.clone(),
-                author: None,
-                description: None,
-                nexus_mod_id: None,
-                nexus_file_id: None,
-                install_path: mod_path.to_string_lossy().to_string(),
-                enabled: false, // Default to disabled so user can enable what they want
-                priority: imported as i32, // Assign priorities in scan order
-                file_count: 0, // Skip file counting for speed during rescan
-                installed_at: now.clone(),
-                updated_at: now,
-                category_id: None,
-            };
-
-            // Insert into DB
-            match self.db.insert_mod(&record) {
-                Ok(_mod_id) => {
-                    imported += 1;
-                    tracing::info!("Imported mod '{}' v{}", name, version);
-                }
+            let scanned = scan_mod_metadata(&mod_path);
+            let files = match collect_files(&mod_path) {
+                Ok(f) => f,
                 Err(e) => {
-                    tracing::warn!("Failed to insert mod '{}': {}", name, e);
-                    skipped += 1;
+                    tracing::warn!("Failed to catalog files for '{}': {}", mod_name, e);
+                    stats.failed += 1;
+                    continue;
+                }
+            };
+            let file_records: Vec<ModFileRecord> = files
+                .iter()
+                .cloned()
+                .map(|path| ModFileRecord {
+                    id: None,
+                    mod_id: 0,
+                    relative_path: path,
+                    hash: None,
+                    size: None,
+                })
+                .collect();
+            let plugin_files = plugin_filenames_from_mod_files(&file_records);
+
+            let existing = self.db.find_mod_by_name(game_id, &scanned.name)?;
+
+            match existing {
+                None => {
+                    let now = chrono::Utc::now().to_rfc3339();
+                    let record = ModRecord {
+                        id: None,
+                        game_id: game_id.to_string(),
+                        name: scanned.name.clone(),
+                        version: scanned.version.clone(),
+                        author: None,
+                        description: scanned.description.clone(),
+                        nexus_mod_id: scanned.nexus_mod_id,
+                        nexus_file_id: scanned.nexus_file_id,
+                        install_path: mod_path.to_string_lossy().to_string(),
+                        enabled: false,
+                        priority: stats.added as i32,
+                        file_count: files.len() as i32,
+                        installed_at: now.clone(),
+                        updated_at: now,
+                        category_id: None,
+                    };
+
+                    match self.db.insert_mod(&record) {
+                        Ok(mod_id) => {
+                            let mut inserted_files = file_records.clone();
+                            for rec in &mut inserted_files {
+                                rec.mod_id = mod_id;
+                            }
+                            if let Err(e) = self.db.insert_mod_files(mod_id, &inserted_files) {
+                                tracing::warn!("Failed to save file index for '{}': {}", scanned.name, e);
+                            }
+                            if let Err(e) = self.db.replace_mod_plugins(mod_id, game_id, &plugin_files) {
+                                tracing::warn!("Failed to index plugins for '{}': {}", scanned.name, e);
+                            }
+                            stats.added += 1;
+                            tracing::info!("Imported mod '{}' v{}", scanned.name, scanned.version);
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to insert mod '{}': {}", scanned.name, e);
+                            stats.failed += 1;
+                        }
+                    }
+                }
+                Some(mut existing_mod) => {
+                    let mod_id = existing_mod.id.unwrap_or(0);
+                    if mod_id == 0 {
+                        stats.failed += 1;
+                        continue;
+                    }
+
+                    let mut existing_files = self
+                        .db
+                        .get_mod_files(mod_id)?
+                        .into_iter()
+                        .map(|f| f.relative_path)
+                        .collect::<Vec<_>>();
+                    existing_files.sort();
+
+                    let mut scanned_files = files.clone();
+                    scanned_files.sort();
+
+                    let resolved_nexus_mod_id = scanned.nexus_mod_id.or(existing_mod.nexus_mod_id);
+                    let resolved_nexus_file_id = scanned.nexus_file_id.or(existing_mod.nexus_file_id);
+                    let resolved_description = scanned
+                        .description
+                        .clone()
+                        .or(existing_mod.description.clone());
+
+                    let changed =
+                        existing_mod.version != scanned.version
+                            || existing_mod.install_path != mod_path.to_string_lossy()
+                            || existing_mod.nexus_mod_id != resolved_nexus_mod_id
+                            || existing_mod.nexus_file_id != resolved_nexus_file_id
+                            || existing_mod.description != resolved_description
+                            || existing_files != scanned_files;
+
+                    if changed {
+                        existing_mod.version = scanned.version.clone();
+                        existing_mod.install_path = mod_path.to_string_lossy().to_string();
+                        existing_mod.nexus_mod_id = resolved_nexus_mod_id;
+                        existing_mod.nexus_file_id = resolved_nexus_file_id;
+                        existing_mod.description = resolved_description;
+                        existing_mod.file_count = files.len() as i32;
+                        existing_mod.updated_at = chrono::Utc::now().to_rfc3339();
+
+                        if let Err(e) = self.db.update_mod(&existing_mod) {
+                            tracing::warn!("Failed to update mod '{}': {}", existing_mod.name, e);
+                            stats.failed += 1;
+                            continue;
+                        }
+
+                        if let Err(e) = self.db.delete_mod_files(mod_id) {
+                            tracing::warn!("Failed clearing old files for '{}': {}", existing_mod.name, e);
+                        }
+                        let mut updated_files = file_records.clone();
+                        for rec in &mut updated_files {
+                            rec.mod_id = mod_id;
+                        }
+                        if let Err(e) = self.db.insert_mod_files(mod_id, &updated_files) {
+                            tracing::warn!("Failed indexing files for '{}': {}", existing_mod.name, e);
+                        }
+                        if let Err(e) = self.db.replace_mod_plugins(mod_id, game_id, &plugin_files) {
+                            tracing::warn!("Failed indexing plugins for '{}': {}", existing_mod.name, e);
+                        }
+                        stats.updated += 1;
+                    } else {
+                        // Keep plugin index in sync even when core mod record is unchanged.
+                        if let Err(e) = self.db.replace_mod_plugins(mod_id, game_id, &plugin_files) {
+                            tracing::warn!("Failed indexing plugins for '{}': {}", existing_mod.name, e);
+                        }
+                        stats.unchanged += 1;
+                    }
                 }
             }
         }
 
-        tracing::info!("Rescan complete: {} imported, {} skipped", imported, skipped);
-        Ok((imported, skipped))
+        tracing::info!(
+            "Rescan complete: {} added, {} updated, {} unchanged, {} failed",
+            stats.added, stats.updated, stats.unchanged, stats.failed
+        );
+        Ok(stats)
     }
 
     /// Parse mod name and version from archive filename
@@ -1092,6 +1205,141 @@ fn collect_files(root: &Path) -> Result<Vec<String>> {
     Ok(files)
 }
 
+/// Extract plugin filenames (.esp/.esm/.esl) from mod file records.
+fn plugin_filenames_from_mod_files(files: &[ModFileRecord]) -> Vec<String> {
+    let mut plugins = std::collections::BTreeSet::new();
+    for file in files {
+        if let Some(name) = Path::new(&file.relative_path).file_name().and_then(|n| n.to_str()) {
+            let lower = name.to_lowercase();
+            if lower.ends_with(".esp") || lower.ends_with(".esm") || lower.ends_with(".esl") {
+                plugins.insert(name.to_string());
+            }
+        }
+    }
+    plugins.into_iter().collect()
+}
+
+#[derive(Debug, Clone)]
+struct ScannedModMetadata {
+    name: String,
+    version: String,
+    nexus_mod_id: Option<i64>,
+    nexus_file_id: Option<i64>,
+    description: Option<String>,
+}
+
+fn scan_mod_metadata(mod_path: &Path) -> ScannedModMetadata {
+    let dir_name = mod_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown");
+
+    let (mut name, mut version) = ModManager::parse_mod_name(dir_name);
+    let mut nexus_mod_id = ModManager::parse_nexus_ids(dir_name).map(|(mid, _)| mid);
+    let mut nexus_file_id = ModManager::parse_nexus_ids(dir_name).map(|(_, fid)| fid);
+    let mut description = None;
+
+    let meta_ini = mod_path.join("meta.ini");
+    if meta_ini.exists() {
+        if let Ok(meta) = parse_meta_ini(&meta_ini) {
+            if let Some(meta_name) = meta.name {
+                name = meta_name;
+            }
+            if let Some(meta_version) = meta.version {
+                version = meta_version;
+            }
+            nexus_mod_id = meta.nexus_mod_id.or(nexus_mod_id);
+            nexus_file_id = meta.nexus_file_id.or(nexus_file_id);
+            description = meta.description;
+        }
+    }
+
+    if description.is_none() {
+        description = extract_short_description(mod_path);
+    }
+
+    ScannedModMetadata {
+        name,
+        version,
+        nexus_mod_id,
+        nexus_file_id,
+        description,
+    }
+}
+
+#[derive(Debug, Default)]
+struct ParsedMetaIni {
+    name: Option<String>,
+    version: Option<String>,
+    nexus_mod_id: Option<i64>,
+    nexus_file_id: Option<i64>,
+    description: Option<String>,
+}
+
+fn parse_meta_ini(path: &Path) -> Result<ParsedMetaIni> {
+    let content = std::fs::read_to_string(path)?;
+    let mut parsed = ParsedMetaIni::default();
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with(';') {
+            continue;
+        }
+        let Some((key, value)) = trimmed.split_once('=') else {
+            continue;
+        };
+        let key = key.trim().to_lowercase();
+        let value = value.trim();
+        if value.is_empty() {
+            continue;
+        }
+
+        match key.as_str() {
+            "name" => parsed.name = Some(value.to_string()),
+            "version" => parsed.version = Some(value.to_string()),
+            "modid" | "nexus_mod_id" => {
+                if let Ok(id) = value.parse::<i64>() {
+                    parsed.nexus_mod_id = Some(id);
+                }
+            }
+            "fileid" | "nexus_file_id" => {
+                if let Ok(id) = value.parse::<i64>() {
+                    parsed.nexus_file_id = Some(id);
+                }
+            }
+            "description" | "notes" | "comments" => {
+                parsed.description = Some(value.to_string());
+            }
+            _ => {}
+        }
+    }
+
+    Ok(parsed)
+}
+
+fn extract_short_description(mod_path: &Path) -> Option<String> {
+    let entries = std::fs::read_dir(mod_path).ok()?;
+    for entry in entries.filter_map(|e| e.ok()) {
+        if !entry.file_type().ok()?.is_file() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_lowercase();
+        if !(name.starts_with("readme") || name.starts_with("description") || name.ends_with(".txt")) {
+            continue;
+        }
+        let text = std::fs::read_to_string(entry.path()).ok()?;
+        let first_line = text
+            .lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty() && !l.starts_with('#') && !l.starts_with("//"))?;
+        let short = first_line.chars().take(240).collect::<String>();
+        if !short.is_empty() {
+            return Some(short);
+        }
+    }
+    None
+}
+
 /// Move contents from one directory to another
 async fn move_contents(from: &Path, to: &Path) -> Result<()> {
     for entry in std::fs::read_dir(from)? {
@@ -1114,4 +1362,3 @@ async fn move_contents(from: &Path, to: &Path) -> Result<()> {
     }
     Ok(())
 }
-

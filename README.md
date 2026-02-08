@@ -1,457 +1,304 @@
 # ModSanity
 
-<div align="center">
+A CLI/TUI mod manager for Bethesda games on Linux.
 
-**A powerful, Terminal Based mod manager for Bethesda games on Linux**
+[Release v0.1.7](https://github.com/binarymass/ModSanity/releases/tag/ModSanity)
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Rust](https://img.shields.io/badge/rust-%23000000.svg?style=flat&logo=rust&logoColor=white)](https://www.rust-lang.org/)
-[![Linux](https://img.shields.io/badge/Linux-FCC624?style=flat&logo=linux&logoColor=black)](https://www.linux.org/)
+## Overview
 
-[Features](#-features) • [Installation](#-installation) • [Quick Start](#-quick-start) • [Contributing](#-contributing) • [Donate](https://buymeacoffee.com/tdpunkn0wnable)
+ModSanity provides:
+- Game detection for supported Steam installs.
+- GOG/manual game path registration and detection.
+- Mod install/remove/enable/disable workflows.
+- Deployment to game directories (symlink, hardlink, or copy).
+- FOMOD support with interactive wizard in the TUI.
+- Plugin/load-order management.
+- Nexus catalog population + mod browsing/import tooling.
+- Queue-based download/install processing.
+- Database-backed modlists.
+- External tool launch via Proton.
 
+## Verified Features (from current code)
 
-[Release v.0.1.6](https://github.com/binarymass/ModSanity/releases/tag/ModSanity)
+### Game and environment
+- Automatic Steam library scanning and game detection.
+- Proton prefix detection via `steamapps/compatdata/<app_id>`.
+- Active game selection persisted in config.
 
-**If you find this tool useful, consider showing your support with a donation. Obviously not a requirement, but a little goes a long way towards future development**
+### Mod management
+- Install mods from archives (`.zip`, `.7z`, `.rar`).
+- Remove, enable, disable, list, and inspect installed mods.
+- Priority-based conflict resolution during deployment.
+- Case-insensitive path normalization during deployment to avoid duplicate folder casing splits.
+- Deployment methods: `symlink`, `hardlink`, `copy`.
+- SKSE override behavior:
+  - SKSE runtime binaries (`skse*.exe`, `skse*.dll`) are deployed next to the game executable.
+  - SKSE-related files are always hard-copied (never linked), regardless of global deploy method.
+- Rescan staging directory to add/update existing mods in DB, re-index files/plugins, and report added/updated/unchanged/failed stats.
 
-</div>
+### FOMOD
+- FOMOD detection and parsing (`ModuleConfig.xml` / `info.xml` handling, case-insensitive search).
+- Interactive TUI wizard flow for option selection and conditional installs.
+- FOMOD plan persistence support in DB.
+- CLI install path explicitly fails when a wizard is required (TUI required for interactive FOMOD).
 
----
+### Plugins and load order
+- Plugin scanning (`.esp`, `.esm`, `.esl`) from game `Data`.
+- Read/write `plugins.txt` and `loadorder.txt` (Proton AppData paths).
+- Manual reorder and save from TUI.
+- Native Rust auto-sort.
+- Optional LOOT CLI sort if LOOT executable is available.
 
-##  Overview
+### Profiles
+- Create/list/switch/delete profiles.
+- Export/import profile files.
 
-ModSanity is a native Linux mod manager built from the ground up for Bethesda games. Designed for power users who prefer terminal workflows, it combines the full feature set of tools like Mod Organizer 2 and Vortex with the speed and efficiency of a Terminal TUI.
+### Modlists and import
+- Save modlists to file:
+  - Native JSON format.
+  - MO2-style text format.
+- Load modlists from file (native and MO2 paths).
+- Persist saved/imported modlists in SQLite (`modlists` + `modlist_entries`).
+- TUI modlist editor for saved modlists (create/rename/delete modlists, enable/disable/reorder/delete entries).
+- Import matching pipeline with DB catalog support and plugin-name-assisted matching.
+- MO2 migration bridge command to apply plugin enabled/disabled state to installed mods.
 
-**Why ModSanity?**
--  **Linux-native**: Built specifically for Linux with first-class Steam/Proton support
--  **Terminal Based**: Complete TUI interface with vim-style navigation
--  **Zero compromise**: Full FOMOD installer support, conflict detection, and profile management
--  **Fast & efficient**: Written in Rust for maximum performance
--  **Safe & deterministic**: Transactional deployments with automatic rollback
--  **Just works**: Automatic game detection, intelligent mod categorization
+### Nexus integration
+- Local Nexus catalog population (REST-backed) and resume/status tracking.
+- TUI browse/search with sort and pagination, file selection, and queueing.
+- Requirement checks for selected mods in TUI (API key required).
 
----
+### Queue system
+- Persistent queue entries in DB.
+- Batch processing with concurrent downloads.
+- Optional download-only mode.
+- Retry failed items and clear batch.
 
-##  Features
+### External tools (Proton)
+- Selectable Steam-managed Proton runtime detection (`steamapps/common` and `compatibilitytools.d`).
+- Optional custom Proton command/path fallback.
+- Per-tool runtime mode override (`proton` or `native`).
+- Configurable tool executable paths for:
+  - xEdit, SSEEdit, FNIS, Nemesis, Symphony, BodySlide, Outfit Studio.
+- Launch configured tools via Proton from CLI or TUI Settings.
 
-###  Game Management
-- **Automatic game detection** for Steam libraries including Proton prefixes
-- **Multi-game support** for Bethesda Creation Engine titles
-- **Intelligent path resolution** for Windows games running under Proton
-- Tested with Skyrim SE, Skyrim VR, and designed for Fallout 4, Oblivion, and more
+### Configurable storage paths
+- Configurable downloads directory override.
+- Configurable staging/installed-mods directory override.
+- Both are configurable from CLI and TUI Settings.
 
-###  Advanced Mod Management
-- **Full FOMOD installer support** with interactive wizard interface
-  - Multi-step installations with conditional logic
-  - Option flags and dependency resolution
-  - Preview and rollback capabilities
-  - Persistent installer choices per profile
-- **Priority-based load ordering** with automatic conflict resolution
-- **Smart conflict detection** showing file overwrites before deployment
-- **Auto-categorization** using mod metadata and file structure analysis
-- **Multiple deployment methods**: symlinks, hardlinks, or file copies
-- **Archive support**: ZIP, 7-Zip with automatic extraction
+## Supported Games
 
-###  Profile System
-- **Unlimited profiles** for different playthroughs or testing
-- **Per-profile FOMOD installations** for variant mod setups
-- **Instant switching** between mod configurations
-- **Isolated plugin load orders** per profile
+Current `GameType` implementations:
+- Skyrim Special Edition (`skyrimse`)
+- Skyrim VR (`skyrimvr`)
+- Fallout 4 (`fallout4`)
+- Fallout 4 VR (`fallout4vr`)
+- Starfield (`starfield`)
 
-###  Plugin Load Order Management
-- **LOOT-compatible sorting** with masterlist integration
-- **Dependency resolution** ensuring masters load correctly
-- **Group-based ordering** for optimal plugin arrangement
-- **Manual override support** for fine-tuning
-- **ESP/ESM/ESL support** with proper flag handling
+## Requirements
 
-###  NexusMods Integration
-- **Direct mod browsing** from the TUI
-- **Search functionality** across all game mods
-- **One-click downloads** with progress tracking
-- **Mod metadata sync** including descriptions and requirements
-- **Requirement checking** via NexusMods API
-- **Personal API key and SSO support** (experimental)
+- Linux
+- Rust toolchain (for source builds)
+- Optional for `.rar` extraction: `unrar`
+- Optional for LOOT sort: `loot` executable
+- Nexus API key for Nexus features (browse/import/download/catalog populate)
 
-###  Rich TUI Interface
-- **Interactive terminal UI** built with Ratatui
-- **Keyboard navigation** (vim-style keybindings supported)
-- **Real-time status updates** during operations
-- **Context-sensitive help** with `?` key
-- **Multi-screen workflow**: Mods, Plugins, Downloads, Profiles, Settings
+## Installation
 
-###  Developer-Friendly
-- **CLI mode** for scripting and automation
-- **JSON/YAML/TOML** configuration support
-- **Comprehensive logging** with tracing support
-- **SQLite database** for fast queries
-- **Modular architecture** with clean APIs
-
----
-
-##  Installation
-
-### From Source (Recommended)
+### Build from source
 
 ```bash
-# Clone the repository
 git clone https://github.com/modsanity/modsanity.git
 cd modsanity
-
-# Build release binary
 cargo build --release
-
-# Install to ~/.local/bin (or your preferred location)
 cp target/release/modsanity ~/.local/bin/
+```
 
-# Or run the install script
+### Install script
+
+```bash
 ./install.sh
 ```
 
-### Binary Releases
+## Configuration
 
-Download the latest binary from the [Releases](https://github.com/modsanity/modsanity/releases) page.
+XDG-backed paths used by the app:
+- Config: `~/.config/modsanity/config.toml`
+- Data: `~/.local/share/modsanity/`
+- Cache: `~/.cache/modsanity/`
 
-```bash
-# Make executable
-chmod +x modsanity
+Important config keys:
+- `active_game`
+- `active_profile`
+- `nexus_api_key`
+- `[deployment]` with `method`, `backup_originals`, `purge_on_exit`
+- `downloads_dir_override`
+- `staging_dir_override`
+- `[external_tools]` with `proton_command`, optional `proton_runtime`, and tool paths
 
-# Move to PATH
-mv modsanity ~/.local/bin/
+Example deployment config:
+
+```toml
+[deployment]
+method = "symlink"   # symlink | hardlink | copy
+backup_originals = true
+purge_on_exit = false
 ```
 
----
+## Quick Start
 
-##  Quick Start
-
-### 1. Initial Setup
-
-**Detect your games:**
 ```bash
-modsanity game scan        # Scan Steam libraries
-modsanity game list        # View detected games
-modsanity game select skyrimse  # Set active game
+# 1) Detect and select game
+modsanity game scan
+modsanity game list
+modsanity game select skyrimse
+
+# 2) Install a mod archive
+modsanity mod install /path/to/mod.zip
+
+# 3) Deploy
+modsanity deploy
+
+# 4) Check status
+modsanity status
 ```
 
-### 2. Configure NexusMods (Optional)
-
-**Option A - Personal API Key (for testing):**
-```bash
-modsanity nexus set-api-key YOUR_API_KEY
-```
-
-Get your API key at: https://www.nexusmods.com/users/myaccount?tab=api
-
-**Option B - TUI Setup:**
-1. Launch TUI: `modsanity`
-2. Press `F4` for Settings
-3. Select "NexusMods API Key"
-4. Paste your key
-
-### 3. Launch the TUI
+For interactive workflows (FOMOD wizard, browse, queue review, modlist editor), launch:
 
 ```bash
 modsanity
-# or explicitly
-modsanity tui
 ```
 
-### 4. Install Your First Mod
+Extended guides:
+- `docs/quickstart.md`
+- `docs/migration/mo2.md`
+- `docs/ui/accessibility.md`
+- `CLI-Documentation.md`
+- `docs/verification/questions_phase_status.md`
 
-**Via NexusMods (in TUI):**
-1. Press `b` to browse NexusMods
-2. Press 's' to search from the  browse window
-3. Select a mod and download
-4. Press `i` to install from downloads
+## CLI Command Reference
 
-**Via Local Archive:**
+### Top-level
+- `modsanity` (launch TUI)
+- `modsanity --mods-dir <path> <command...>` (runtime staging override)
+- `modsanity tui`
+- `modsanity status`
+- `modsanity deploy [--method symlink|hardlink|copy]`
+- `modsanity doctor [--verbose]`
+- `modsanity init [--game-id ... --platform ... --game-path ... --downloads-dir ... --staging-dir ... --proton-prefix ...]`
+- `modsanity audit --dry-run`
+- `modsanity getting-started`
+
+### Game
+- `modsanity game list`
+- `modsanity game scan`
+- `modsanity game select <name>`
+- `modsanity game info`
+- `modsanity game add-path <game_id> <path> [--platform steam|gog|manual] [--proton-prefix <path>]`
+- `modsanity game remove-path <game_id> <path>`
+
+### Mod
+- `modsanity mod list`
+- `modsanity mod install <path>`
+- `modsanity mod enable <name>`
+- `modsanity mod disable <name>`
+- `modsanity mod remove <name>`
+- `modsanity mod info <name>`
+- `modsanity mod rescan`
+
+### Profile
+- `modsanity profile list`
+- `modsanity profile create <name>`
+- `modsanity profile switch <name>`
+- `modsanity profile delete <name>`
+- `modsanity profile export <name> <path>`
+- `modsanity profile import <path>`
+
+### Import
+- `modsanity import modlist <path> [--auto-approve] [--preview]`
+- `modsanity import status <batch_id>`
+- `modsanity import apply-enabled <path> [--preview]`
+
+### Queue
+- `modsanity queue list`
+- `modsanity queue process --batch-id <id> [--download-only]`
+- `modsanity queue retry`
+- `modsanity queue clear --batch-id <id>`
+
+### Modlist
+- `modsanity modlist save <path> [--format native|mo2]`
+- `modsanity modlist load <path> [--auto-approve] [--preview]`
+
+### Nexus catalog
+- `modsanity nexus populate --game <domain> [--reset] [--per-page N] [--max-pages N]`
+- `modsanity nexus status --game <domain>`
+
+### Deployment settings
+- `modsanity deployment show`
+- `modsanity deployment set-method <symlink|hardlink|copy>`
+- `modsanity deployment set-downloads-dir <path>`
+- `modsanity deployment clear-downloads-dir`
+- `modsanity deployment set-staging-dir <path>`
+- `modsanity deployment clear-staging-dir`
+- `modsanity deployment migrate-staging <from> <to> [--dry-run]`
+
+### External tools
+- `modsanity tool show`
+- `modsanity tool list-proton`
+- `modsanity tool use-proton <runtime-id|auto>`
+- `modsanity tool clear-proton-runtime`
+- `modsanity tool set-proton <path-or-command>`
+- `modsanity tool set-path <tool> <path>`
+- `modsanity tool set-runtime <tool> <proton|native>`
+- `modsanity tool clear-runtime <tool>`
+- `modsanity tool clear-path <tool>`
+- `modsanity tool run <tool> [-- <args...>]`
+
+Tool IDs:
+- `xedit`, `ssedit`/`sseedit`, `fnis`, `nemesis`, `symphony`, `bodyslide`, `outfitstudio`
+
+## TUI Screens (current)
+
+Function keys:
+- `F1` Mods
+- `F2` Plugins
+- `F3` Profiles
+- `F4` Settings
+- `F5` Import
+- `F6` Queue
+- `F7` Nexus Catalog
+- `F8` Modlists
+
+Global keys:
+- `?` help
+- `g` game select
+- `q` quit
+
+Help overlay:
+- `?` opens/closes the full help overlay.
+- Help is paginated and includes TUI keybindings plus a CLI command map.
+- Navigate help pages with `n`/Right/`PgDn` and `p`/Left/`PgUp`.
+
+Settings notes:
+- Deployment method, backup toggle, API key, default mod directory, downloads/staging overrides.
+- Proton runtime selection, Proton command, and external tool paths are editable.
+- `l` launches the selected tool when a tool-path row is selected.
+
+## Known Behavioral Notes
+
+- Nexus-powered flows require a configured `nexus_api_key`.
+- CLI install cannot complete interactive FOMOD wizards; use TUI for those installs.
+- RAR extraction requires `unrar` on the system.
+
+## Development
+
 ```bash
-modsanity mod install path/to/mod.zip
-# or in TUI: press 'i' and select file
-```
-
-### 5. Deploy Mods
-
-```bash
-modsanity deploy
-# or in TUI: press 'D' on the Mods screen
-```
-
----
-
-## ⌨️ TUI Keyboard Shortcuts
-
-### Global Navigation
-| Key | Action |
-|-----|--------|
-| `F1` | Mods screen |
-| `F2` | Plugins screen |
-| `F3` | Profiles screen |
-| `F4` | Settings screen |
-| `g` | Game selection |
-| `?` | Toggle help overlay |
-| `q` / `Ctrl+C` | Quit |
-
-### Mods Screen (F1)
-| Key | Action |
-|-----|--------|
-| `↑/k` `↓/j` | Navigate mods |
-| `Space` / `e` | Enable/disable mod |
-| `+` / `=` | Increase priority (loads later) |
-| `-` | Decrease priority |
-| `i` | Install mod from archive |
-| `d` / `Delete` | Delete mod (with confirmation) |
-| `D` | Deploy all enabled mods |
-| `/` | Search/browse NexusMods |
-| `r` | Refresh mod list |
-| `x` | Check mod requirements |
-
-### Plugins Screen (F2)
-| Key | Action |
-|-----|--------|
-| `Space` / `e` | Enable/disable plugin |
-| `s` | Save and optimize load order |
-| `↑/k` `↓/j` | Navigate plugins |
-
-### Profiles Screen (F3)
-| Key | Action |
-|-----|--------|
-| `Enter` | Switch to profile |
-| `n` | Create new profile |
-| `d` / `Delete` | Delete profile |
-
-### Browse/Downloads Screen 
-| Key | Action |
-|-----|--------|
-| `Enter` | Download selected mod |
-| `/` | Search NexusMods |
-| `r` | Refresh/load top mods |
-
----
-
-##  CLI Commands
-
-### Game Management
-```bash
-modsanity game list           # List detected games
-modsanity game scan           # Scan for games
-modsanity game select <name>  # Select active game
-modsanity game info           # Show active game info
-```
-
-### Mod Management
-```bash
-modsanity mod list                  # List installed mods
-modsanity mod install <path>        # Install mod from archive
-modsanity mod enable <name>         # Enable a mod
-modsanity mod disable <name>        # Disable a mod
-modsanity mod remove <name>         # Remove a mod
-modsanity mod info <name>           # Show mod details
-```
-
-### Profile Management
-```bash
-modsanity profile list              # List profiles
-modsanity profile create <name>     # Create new profile
-modsanity profile switch <name>     # Switch to profile
-modsanity profile delete <name>     # Delete profile
-modsanity profile export <name> <path>  # Export profile
-modsanity profile import <path>     # Import profile
-```
-
-### NexusMods
-```bash
-modsanity nexus set-api-key <key>   # Set personal API key
-modsanity nexus login               # Login via SSO
-modsanity nexus logout              # Logout
-modsanity nexus search <query>      # Search for mods
-modsanity nexus download <mod_id>   # Download a mod
-modsanity nexus status              # Show account status
-```
-
-### Deployment
-```bash
-modsanity deploy                    # Deploy mods to game directory
-modsanity status                    # Show current status
-```
-
----
-
-##  FOMOD Installer Support
-
-ModSanity includes **full MO2/Vortex-grade FOMOD support**, built from the ground up for Linux:
-
-### Features
--  **Complete XML parsing** of `ModuleConfig.xml` and `info.xml`
--  **Multi-step installations** with pages and groups
--  **Conditional logic** with flag evaluation
--  **Requirement validation** (SelectExactlyOne, SelectAtMostOne, etc.)
--  **File mapping** and custom install paths
--  **Conflict preview** before installation
--  **Transactional execution** with automatic rollback on failure
--  **Persistent choices** - rerun installers with saved selections
--  **Per-profile installations** - different FOMOD configs per profile
-
-### Usage
-1. Install a FOMOD-enabled mod
-2. ModSanity auto-detects the installer
-3. Launch the interactive wizard (in TUI or via CLI)
-4. Navigate through steps, select options
-5. Preview file operations and conflicts
-6. Confirm and install with rollback safety
-
-For details, see [FOMOD_USER_GUIDE.md](docs/FOMOD_USER_GUIDE.md).
-
----
-
-##  Architecture Highlights
-
-### Safe & Deterministic
-- **Transactional deployments**: All-or-nothing installations with automatic rollback
-- **Priority-based conflict resolution**: Explicit, reproducible load orders
-- **No hidden state**: Always preview what files will be deployed
-- **Atomic operations**: Safe profile switching and mod updates
-
-### Performance Optimized
-- **Async I/O**: Fast downloads and file operations
-- **SQLite caching**: Quick queries for large mod lists
-- **Efficient algorithms**: Topological sorting for plugin load orders
-- **Minimal overhead**: Direct symlinks avoid file duplication
-
-### Modular Design
-```
-src/
-├── games/       # Game detection and configuration
-├── mods/        # Mod management and FOMOD
-├── plugins/     # Plugin load order and LOOT integration
-├── profiles/    # Profile management
-├── nexus/       # NexusMods API client
-├── db/          # Database layer
-├── config/      # Configuration handling
-└── tui/         # Terminal UI
-```
-
----
-
-##  Configuration
-
-### Config Location
-- **Config file**: `~/.config/modsanity/config.toml`
-- **Data directory**: `~/.local/share/modsanity/`
-- **Mod storage**: `~/.local/share/modsanity/games/<game_id>/mods/`
-
-### Deployment Methods
-Configure in `config.toml`:
-```toml
-[deployment]
-method = "symlink"  # Options: "symlink", "hardlink", "copy"
-```
-
-- **symlink**: Fast, space-efficient (recommended)
-- **hardlink**: Safe for games that follow symlinks
-- **copy**: Full file copies (most compatible, uses more space)
-
----
-
-##  Supported Games
-
-Currently tested with:
--  **The Elder Scrolls V: Skyrim Special Edition**
--  **The Elder Scrolls V: Skyrim VR**
-
-Designed to work with all Creation Engine games:
--  Fallout 4
--  Fallout: New Vegas
--  The Elder Scrolls IV: Oblivion
--  Fallout 3
--  Starfield
-
-*Community testing and contributions welcome for additional games!*
-
----
-
-##  Known Limitations
-
-- **NexusMods SSO**: Requires official app registration (use personal API key for now)
-- **Windows-only mods**: Some tools with native Windows executables won't work (use Proton workarounds)
-- **Early development**: Some edge cases may not be handled perfectly
-
----
-
-##  Contributing
-
-Contributions are welcome! Here's how you can help:
-
-1. **Report bugs**: Open an issue with details and reproduction steps
-2. **Suggest features**: Describe your use case and desired functionality
-3. **Test new games**: Try ModSanity with other Bethesda titles and report results
-4. **Submit PRs**: Fix bugs, add features, or improve documentation
-
-### Development Setup
-```bash
-git clone https://github.com/modsanity/modsanity.git
-cd modsanity
 cargo build
 cargo test
+cargo build --release
 ```
 
-### Code Style
-- Follow Rust conventions (`cargo fmt`, `cargo clippy`)
-- Add tests for new features
-- Update documentation for user-facing changes
+## License
 
----
-
-##  License
-
-ModSanity is licensed under the [MIT License](LICENSE).
-
----
-
-##  Acknowledgments
-
-- **LOOT** - Load order optimization algorithms and masterlist format
-- **Mod Organizer 2** - FOMOD specification and mod management patterns
-- **Ratatui** - Excellent terminal UI framework
-- **NexusMods** - API and mod hosting infrastructure
-- **Bethesda modding community** - For decades of incredible content
-
----
-
-##  Support & Community
-
-- **Issues**: [GitHub Issues](https://github.com/modsanity/modsanity/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/modsanity/modsanity/discussions)
-
----
-
-##  Roadmap
-
-### Planned Features
--  Collections support (Nexus Collections integration)
--  Download queue management
--  Mod update notifications
--  BSA/BA2 archive extraction
--  Integrated conflict resolver UI
--  Web UI (optional companion to TUI)
--  Cloud profile sync
--  Mod dependency graph visualization
--  xEdit integration for conflict detection
--  SKSE/F4SE version management
-
-### Long-term Goals (Function Before Finesse)
-- GUI version (GTK/Qt)
-- Windows/macOS support
-- Integration with other mod sites (ModDB, LoversLab, etc.)
-- Advanced scripting and automation APIs
-
----
-
-<div align="center">
-
-
-
-[⬆ Back to Top](#modsanity)
-
-</div>
+MIT (`LICENSE`)
