@@ -51,6 +51,14 @@ pub enum ModlistEditorMode {
     EntryEditor,
 }
 
+/// TUI interaction density mode
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum UiMode {
+    #[default]
+    Guided,
+    Advanced,
+}
+
 /// Application state for TUI
 #[derive(Debug, Default)]
 pub struct AppState {
@@ -59,6 +67,9 @@ pub struct AppState {
 
     /// Current screen
     pub current_screen: Screen,
+
+    /// UI verbosity/complexity mode
+    pub ui_mode: UiMode,
 
     /// Previous screen (for back navigation)
     pub previous_screen: Option<Screen>,
@@ -260,6 +271,7 @@ pub struct AppState {
     pub modlist_load_path: String,
     pub modlist_review_data: Option<ModlistReviewData>,
     pub selected_modlist_entry: usize,
+    pub modlist_export_id: Option<i64>,
 
     /// Modlist editor state
     pub saved_modlists: Vec<ModlistRecord>,
@@ -533,6 +545,17 @@ impl AppState {
     pub fn clear_status(&mut self) {
         self.status_message = None;
     }
+
+    pub fn toggle_ui_mode(&mut self) {
+        self.ui_mode = match self.ui_mode {
+            UiMode::Guided => UiMode::Advanced,
+            UiMode::Advanced => UiMode::Guided,
+        };
+    }
+
+    pub fn is_advanced_mode(&self) -> bool {
+        self.ui_mode == UiMode::Advanced
+    }
 }
 
 /// Input mode for text entry
@@ -559,6 +582,8 @@ pub enum InputMode {
     LoadModlistPath,
     CatalogSearch,
     ModlistNameInput,
+    ModlistAddCatalogInput,
+    ModlistAddDirectoryInput,
     QueueManualModIdInput,
 }
 

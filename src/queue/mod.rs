@@ -129,6 +129,11 @@ impl QueueManager {
         self.db.update_download_progress(entry_id, downloaded, total)
     }
 
+    /// Update queue entry display name.
+    pub fn update_name(&self, entry_id: i64, name: &str) -> Result<()> {
+        self.db.update_download_name(entry_id, name)
+    }
+
     /// Delete an entry
     pub fn delete_entry(&self, entry_id: i64) -> Result<()> {
         self.db.delete_download(entry_id)

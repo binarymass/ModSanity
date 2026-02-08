@@ -3,7 +3,7 @@
 mod actions;
 pub mod state;
 
-pub use state::{AppState, ConfirmAction, ConfirmDialog, InputMode, Screen};
+pub use state::{AppState, ConfirmAction, ConfirmDialog, InputMode, Screen, UiMode};
 
 use crate::config::{Config, DeploymentMethod, ExternalTool, ToolRuntimeMode};
 use crate::db::Database;

@@ -367,6 +367,16 @@ impl Database {
         Ok(())
     }
 
+    /// Update mod display name.
+    pub fn set_mod_name(&self, mod_id: i64, name: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE mods SET name = ?1, updated_at = datetime('now') WHERE id = ?2",
+            params![name, mod_id],
+        )?;
+        Ok(())
+    }
+
     /// Delete a mod
     pub fn delete_mod(&self, mod_id: i64) -> Result<()> {
         let conn = self.conn.lock().unwrap();
@@ -1373,6 +1383,16 @@ impl Database {
                 params![downloaded, download_id],
             )?;
         }
+        Ok(())
+    }
+
+    /// Update queue entry display name without changing status.
+    pub fn update_download_name(&self, download_id: i64, name: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE downloads SET name = ?1 WHERE id = ?2",
+            params![name, download_id],
+        )?;
         Ok(())
     }
 

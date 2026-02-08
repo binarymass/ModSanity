@@ -95,6 +95,11 @@ impl QueueProcessor {
     async fn process_entry(&self, entry: QueueEntry, download_only: bool) -> Result<()> {
         tracing::info!("Processing entry: {} (mod_id: {})", entry.mod_name, entry.nexus_mod_id);
 
+        let resolved_name = self.resolve_mod_name(&entry).await.unwrap_or_else(|| entry.mod_name.clone());
+        if resolved_name != entry.mod_name {
+            let _ = self.queue_manager.update_name(entry.id, &resolved_name);
+        }
+
         if entry.nexus_mod_id <= 0 {
             let msg = "No Nexus mod ID (manual resolution required)".to_string();
             self.queue_manager
@@ -115,6 +120,41 @@ impl QueueProcessor {
             )?;
             tracing::info!("Skipping {} (already installed)", entry.mod_name);
             return Ok(());
+        }
+
+        // Legacy fallback: unresolved installs may exist under a numeric name
+        // without nexus_mod_id populated (e.g. "165498"). Treat these as installed
+        // and upgrade metadata so they are not re-added as duplicates.
+        let legacy_name = entry.nexus_mod_id.to_string();
+        if let Some(mut legacy_mod) = self.queue_manager.db.get_mod(&self.game_id, &legacy_name)? {
+            if legacy_mod.nexus_mod_id.is_none() || legacy_mod.nexus_mod_id == Some(entry.nexus_mod_id) {
+                let target_name_conflict = !legacy_mod.name.eq_ignore_ascii_case(&resolved_name)
+                    && self
+                        .queue_manager
+                        .db
+                        .get_mod(&self.game_id, &resolved_name)?
+                        .is_some();
+
+                if !target_name_conflict && !resolved_name.trim().is_empty() {
+                    legacy_mod.name = resolved_name.clone();
+                }
+                legacy_mod.nexus_mod_id = Some(entry.nexus_mod_id);
+                if legacy_mod.nexus_file_id.is_none() {
+                    legacy_mod.nexus_file_id = entry.selected_file_id;
+                }
+                legacy_mod.updated_at = chrono::Utc::now().to_rfc3339();
+                if let Err(e) = self.queue_manager.db.update_mod(&legacy_mod) {
+                    tracing::warn!("Failed to upgrade legacy mod record {}: {}", legacy_name, e);
+                }
+
+                self.queue_manager.update_status(
+                    entry.id,
+                    QueueStatus::Skipped,
+                    Some("Already installed (legacy entry upgraded)".to_string()),
+                )?;
+                tracing::info!("Skipping {} (legacy install already present)", entry.mod_name);
+                return Ok(());
+            }
         }
 
         // Step 1: Get file ID if not already selected
@@ -209,12 +249,13 @@ impl QueueProcessor {
                     None,
                     Some(entry.nexus_mod_id),
                     Some(file_id),
+                    Some(&resolved_name),
                 )
                 .await
             {
                 Ok(InstallResult::Completed(installed)) => {
                     self.queue_manager.update_status(entry.id, QueueStatus::Completed, None)?;
-                    tracing::info!("Installed {} as {}", entry.mod_name, installed.name);
+                    tracing::info!("Installed {} as {}", resolved_name, installed.name);
                 }
                 Ok(InstallResult::RequiresWizard(_)) => {
                     self.queue_manager.update_status(
@@ -239,6 +280,39 @@ impl QueueProcessor {
         }
 
         Ok(())
+    }
+
+    async fn resolve_mod_name(&self, entry: &QueueEntry) -> Option<String> {
+        if entry.nexus_mod_id <= 0 {
+            return Some(entry.mod_name.clone());
+        }
+
+        if let Ok(Some(catalog)) = self
+            .queue_manager
+            .db
+            .get_catalog_mod_by_id(&self.game_domain, entry.nexus_mod_id)
+        {
+            let n = catalog.name.trim().to_string();
+            if !n.is_empty() {
+                return Some(n);
+            }
+        }
+
+        match self
+            .nexus_client
+            .get_mod_name_by_id(&self.game_domain, entry.nexus_mod_id)
+            .await
+        {
+            Ok(Some(name)) if !name.trim().is_empty() => Some(name.trim().to_string()),
+            _ => {
+                let fallback = entry.mod_name.trim();
+                if fallback.is_empty() {
+                    None
+                } else {
+                    Some(fallback.to_string())
+                }
+            }
+        }
     }
 
     /// Select the main file for a mod

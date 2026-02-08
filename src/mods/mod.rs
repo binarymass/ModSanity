@@ -144,6 +144,7 @@ impl ModManager {
         progress_callback: Option<ProgressCallback>,
         nexus_mod_id: Option<i64>,
         nexus_file_id: Option<i64>,
+        mod_name_hint: Option<&str>,
     ) -> Result<InstallResult> {
         let archive_path = Path::new(archive_path);
         if !archive_path.exists() {
@@ -157,9 +158,79 @@ impl ModManager {
             .unwrap_or("unknown");
 
         // Parse mod name and version from filename
-        let (name, version) = Self::parse_mod_name(archive_name);
+        let (parsed_name, version) = Self::parse_mod_name(archive_name);
+        let name = mod_name_hint
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.replace('_', " ").replace('-', " ").trim().to_string())
+            .unwrap_or(parsed_name);
 
-        // Check if already installed
+        // Resolve Nexus ID from explicit argument first, then filename fallback.
+        let resolved_nexus_mod_id = nexus_mod_id.or_else(|| Self::parse_nexus_ids(archive_name).map(|(mod_id, _)| mod_id));
+
+        // Guard against duplicate installs of the same Nexus mod under different names.
+        // This also upgrades legacy unresolved numeric-name installs (e.g. "165498")
+        // to the resolved display name so queue/import resolution does not create duplicates.
+        if let Some(mid) = resolved_nexus_mod_id {
+            let existing = self.db.find_mods_by_nexus_ids(game_id, &[mid])?;
+            if let Some(existing_mod) = existing.get(&mid) {
+                let is_numeric_name = existing_mod
+                    .name
+                    .trim()
+                    .chars()
+                    .all(|c| c.is_ascii_digit());
+                if is_numeric_name
+                    && !existing_mod.name.eq_ignore_ascii_case(&name)
+                    && self.db.get_mod(game_id, &name)?.is_none()
+                {
+                    let mut upgraded = existing_mod.clone();
+                    upgraded.name = name.clone();
+                    upgraded.nexus_mod_id = Some(mid);
+                    if upgraded.nexus_file_id.is_none() {
+                        upgraded.nexus_file_id = nexus_file_id;
+                    }
+                    upgraded.updated_at = chrono::Utc::now().to_rfc3339();
+                    self.db.update_mod(&upgraded)?;
+                    bail!(
+                        "Mod with Nexus ID {} is already installed; upgraded legacy entry to '{}'",
+                        mid,
+                        name
+                    );
+                }
+                bail!(
+                    "Mod with Nexus ID {} is already installed as '{}'",
+                    mid,
+                    existing_mod.name
+                );
+            }
+
+            let legacy_name = mid.to_string();
+            if let Some(existing_legacy) = self.db.get_mod(game_id, &legacy_name)? {
+                if existing_legacy.nexus_mod_id.is_none()
+                    || existing_legacy.nexus_mod_id == Some(mid)
+                {
+                    let mut upgraded = existing_legacy.clone();
+                    upgraded.nexus_mod_id = Some(mid);
+                    if upgraded.nexus_file_id.is_none() {
+                        upgraded.nexus_file_id = nexus_file_id;
+                    }
+                    if !upgraded.name.eq_ignore_ascii_case(&name)
+                        && self.db.get_mod(game_id, &name)?.is_none()
+                    {
+                        upgraded.name = name.clone();
+                    }
+                    upgraded.updated_at = chrono::Utc::now().to_rfc3339();
+                    self.db.update_mod(&upgraded)?;
+                    bail!(
+                        "Mod with Nexus ID {} is already installed; upgraded legacy entry to '{}'",
+                        mid,
+                        upgraded.name
+                    );
+                }
+            }
+        }
+
+        // Check if already installed by resolved display name.
         if self.db.get_mod(game_id, &name)?.is_some() {
             bail!("Mod '{}' is already installed", name);
         }
@@ -191,7 +262,7 @@ impl ModManager {
                             installer,
                             priority,
                             existing_mod_id: None,
-                            nexus_mod_id,
+                            nexus_mod_id: resolved_nexus_mod_id,
                             nexus_file_id,
                         }));
                     } else {
@@ -226,7 +297,7 @@ impl ModManager {
             version: version.clone(),
             author: None,
             description: None,
-            nexus_mod_id,
+            nexus_mod_id: resolved_nexus_mod_id,
             nexus_file_id,
             install_path: staging.to_string_lossy().to_string(),
             enabled: true,
@@ -263,7 +334,7 @@ impl ModManager {
             author: None,
             enabled: true,
             priority: record.priority,
-            nexus_mod_id,
+            nexus_mod_id: resolved_nexus_mod_id,
             nexus_file_id,
             file_count: file_records.len() as i32,
             install_path: staging,

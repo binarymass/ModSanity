@@ -838,6 +838,38 @@ impl NexusClient {
         Ok(download_links)
     }
 
+    /// Resolve a Nexus mod display name using REST API.
+    pub async fn get_mod_name_by_id(&self, game_domain: &str, mod_id: i64) -> Result<Option<String>> {
+        #[derive(Deserialize)]
+        struct ModDetails {
+            name: Option<String>,
+        }
+
+        let url = format!("{}/games/{}/mods/{}.json", REST_API_BASE, game_domain, mod_id);
+        let response = reqwest::Client::new()
+            .get(&url)
+            .header("apikey", &self.api_key)
+            .header("accept", "application/json")
+            .header("user-agent", "ModSanity/0.1.0")
+            .send()
+            .await
+            .with_context(|| format!("Failed to fetch mod details for {}:{}", game_domain, mod_id))?;
+
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        if !response.status().is_success() {
+            anyhow::bail!("Failed to fetch mod details (status: {})", response.status());
+        }
+
+        let details: ModDetails = response
+            .json()
+            .await
+            .context("Failed to parse mod details response")?;
+
+        Ok(details.name.map(|n| n.trim().to_string()).filter(|n| !n.is_empty()))
+    }
+
     /// Download a file from a URL to a local path, reporting progress via callback
     pub async fn download_file(
         url: &str,

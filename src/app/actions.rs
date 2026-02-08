@@ -175,7 +175,7 @@ impl App {
         };
 
         println!("Installing mod from: {}", path);
-        match self.mods.install_from_archive(&game.id, path, None, None, None).await? {
+        match self.mods.install_from_archive(&game.id, path, None, None, None, None).await? {
             crate::mods::InstallResult::Completed(installed) => {
                 println!("Installed: {} (v{})", installed.name, installed.version);
                 println!("Run 'modsanity deploy' to apply changes.");
@@ -1433,7 +1433,13 @@ impl App {
 
         match format {
             "native" | "json" => {
-                let mods = self.mods.list_mods(&game.id).await?;
+                let mods: Vec<_> = self
+                    .mods
+                    .list_mods(&game.id)
+                    .await?
+                    .into_iter()
+                    .filter(|m| m.enabled)
+                    .collect();
 
                 // Get category names for installed mods
                 let categories = self.db.get_all_categories()?;
@@ -1522,7 +1528,13 @@ impl App {
                 std::fs::write(out_path, lines.join("\n"))
                     .context("Failed to write MO2 modlist file")?;
 
-                let mods = self.mods.list_mods(&game.id).await?;
+                let mods: Vec<_> = self
+                    .mods
+                    .list_mods(&game.id)
+                    .await?
+                    .into_iter()
+                    .filter(|m| m.enabled)
+                    .collect();
                 let db_entries: Vec<crate::db::ModlistEntryRecord> = mods
                     .iter()
                     .enumerate()
