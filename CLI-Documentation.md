@@ -266,7 +266,7 @@ modsanity mod disable "SkyUI"
 
 ### `mod remove <NAME>`
 Removes installed mod entry/files from staging/DB workflow.
-
+c
 ```bash
 modsanity mod remove "SkyUI"
 ```
@@ -380,7 +380,7 @@ Behavior:
 - parses MO2 `modlist.txt`
 - resolves plugin filenames to installed mods through DB plugin index
 - enables/disables resolved installed mods
-- unresolved/ambiguous plugin mappings are reported in summary
+- unresolved/ambiguous plugin mappings are reported in summaryc
 
 ```bash
 modsanity import apply-enabled /path/to/modlist.txt --preview
@@ -705,9 +705,3 @@ modsanity tool run xedit
 - Tool launch failures: verify runtime and tool paths with `modsanity tool show`.
 - Queue/import issues: inspect `modsanity import status [batch]` and `modsanity queue list`.
 
-## 14. Related Docs
-
-- `README.md`
-- `docs/quickstart.md`
-- `docs/migration/mo2.md`
-- `docs/ui/accessibility.md`
