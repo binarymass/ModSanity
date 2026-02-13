@@ -1,13 +1,45 @@
 #!/bin/bash
 # ModSanity Installation Script
 
-set -e
-
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
+
+# Rollback tracking
+INSTALLED_FILES=()
+CREATED_DIRS=()
+
+rollback() {
+    echo ""
+    echo -e "${YELLOW}Rolling back installation...${NC}"
+
+    for file in "${INSTALLED_FILES[@]}"; do
+        if [ -f "$file" ]; then
+            rm -f "$file" && echo "  Removed: $file" || echo "  Failed to remove: $file"
+        fi
+    done
+
+    # Remove dirs in reverse order so children are removed before parents
+    for (( i=${#CREATED_DIRS[@]}-1; i>=0; i-- )); do
+        dir="${CREATED_DIRS[$i]}"
+        if [ -d "$dir" ] && [ -z "$(ls -A "$dir")" ]; then
+            rmdir "$dir" && echo "  Removed dir: $dir" || echo "  Failed to remove dir: $dir"
+        fi
+    done
+
+    echo -e "${YELLOW}Rollback complete.${NC}"
+}
+
+error_exit() {
+    local message="$1"
+    local code="${2:-1}"
+    echo ""
+    echo -e "${RED}Error: ${message} (exit code: ${code})${NC}"
+    rollback
+    exit "$code"
+}
 
 echo -e "${GREEN}ModSanity Installation Script${NC}"
 echo "=============================="
@@ -23,37 +55,65 @@ fi
 PREFIX="${PREFIX:-$HOME/.local}"
 BIN_DIR="$PREFIX/bin"
 SHARE_DIR="$PREFIX/share/modsanity"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "Installation directories:"
 echo "  Binary:        $BIN_DIR"
 echo "  Shared files:  $SHARE_DIR"
 echo ""
 
+# Pre-flight checks
+
 # Check if binary exists
-if [ ! -f "target/release/modsanity" ]; then
-    echo -e "${RED}Error: Binary not found. Please run 'cargo build --release' first${NC}"
-    exit 1
+if [ ! -f "$SCRIPT_DIR/modsanity" ]; then
+    echo -e "${RED}Error: File not found. Expected 'modsanity' in the same directory as this install script${NC}"
+    exit 2
+fi
+
+if [ ! -f "$SCRIPT_DIR/README.md" ]; then
+    echo -e "${RED}Error: File not found. Expected 'README.md' in the same directory as this install script${NC}"
+    exit 2
+fi
+
+if [ ! -f "$SCRIPT_DIR/LICENSE" ]; then
+    echo -e "${RED}Error: File not found. Expected 'LICENSE' in the same directory as this install script${NC}"
+    exit 2
 fi
 
 # Create directories
 echo "Creating directories..."
-mkdir -p "$BIN_DIR"
-mkdir -p "$SHARE_DIR"
+
+if [ ! -d "$BIN_DIR" ]; then
+    mkdir -p "$BIN_DIR" || error_exit "Failed to create directory: $BIN_DIR" $?
+    CREATED_DIRS+=("$BIN_DIR")
+fi
+
+if [ ! -d "$SHARE_DIR" ]; then
+    mkdir -p "$SHARE_DIR" || error_exit "Failed to create directory: $SHARE_DIR" $?
+    CREATED_DIRS+=("$SHARE_DIR")
+fi
 
 # Install binary
 echo "Installing binary..."
-install -m 755 target/release/modsanity "$BIN_DIR/modsanity"
+install -m 755 "$SCRIPT_DIR/modsanity" "$BIN_DIR/modsanity" || error_exit "Failed to install binary" $?
+INSTALLED_FILES+=("$BIN_DIR/modsanity")
 
 # Install documentation
 echo "Installing documentation..."
-install -m 644 README.md "$SHARE_DIR/README.md"
-install -m 644 LICENSE "$SHARE_DIR/LICENSE"
-install -m 644 CHANGELOG.md "$SHARE_DIR/CHANGELOG.md"
+
+install -m 644 "$SCRIPT_DIR/README.md" "$SHARE_DIR/README.md" || error_exit "Failed to install README.md" $?
+INSTALLED_FILES+=("$SHARE_DIR/README.md")
+
+install -m 644 "$SCRIPT_DIR/LICENSE" "$SHARE_DIR/LICENSE" || error_exit "Failed to install LICENSE" $?
+INSTALLED_FILES+=("$SHARE_DIR/LICENSE")
 
 # Copy example files if they exist
-if [ -d "examples" ]; then
-    mkdir -p "$SHARE_DIR/examples"
-    cp -r examples/* "$SHARE_DIR/examples/"
+echo "Copying example files..."
+
+if [ -d "$SCRIPT_DIR/examples" ]; then
+    mkdir -p "$SHARE_DIR/examples" || error_exit "Failed to create examples directory" $?
+    CREATED_DIRS+=("$SHARE_DIR/examples")
+    cp -r "$SCRIPT_DIR/examples/." "$SHARE_DIR/examples/" || error_exit "Failed to copy example files" $?
 fi
 
 # Check if bin directory is in PATH
