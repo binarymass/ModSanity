@@ -73,8 +73,8 @@ pub fn load_collection(path: &Path) -> Result<Collection> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read collection at {}", path.display()))?;
 
-    let collection: Collection = serde_json::from_str(&content)
-        .context("Failed to parse collection JSON")?;
+    let collection: Collection =
+        serde_json::from_str(&content).context("Failed to parse collection JSON")?;
 
     Ok(collection)
 }

@@ -106,9 +106,7 @@ pub fn write_loadorder_txt(game: &Game, plugins: &[String]) -> Result<()> {
 }
 
 /// Check for missing masters in enabled plugins
-pub fn check_missing_masters(
-    plugins: &[super::PluginInfo],
-) -> Vec<(String, Vec<String>)> {
+pub fn check_missing_masters(plugins: &[super::PluginInfo]) -> Vec<(String, Vec<String>)> {
     let enabled_names: std::collections::HashSet<_> = plugins
         .iter()
         .filter(|p| p.enabled)

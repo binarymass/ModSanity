@@ -2,7 +2,7 @@
 
 use super::rest::NexusRestClient;
 use crate::db::{Database, NexusCatalogRecord};
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use chrono;
 use std::sync::Arc;
 use std::time::Duration;
@@ -46,7 +46,11 @@ pub struct CatalogPopulator {
 
 impl CatalogPopulator {
     /// Create a new catalog populator
-    pub fn new(db: Arc<Database>, rest_client: NexusRestClient, game_domain: String) -> Result<Self> {
+    pub fn new(
+        db: Arc<Database>,
+        rest_client: NexusRestClient,
+        game_domain: String,
+    ) -> Result<Self> {
         // Validate game domain (security: prevent injection attacks)
         if !is_valid_game_domain(&game_domain) {
             bail!("Invalid game domain: must contain only lowercase letters, numbers, hyphens, and underscores");
@@ -64,7 +68,11 @@ impl CatalogPopulator {
     }
 
     /// Populate the catalog with optional progress callback
-    pub async fn populate<F>(&self, options: PopulateOptions, progress_callback: Option<F>) -> Result<PopulateStats>
+    pub async fn populate<F>(
+        &self,
+        options: PopulateOptions,
+        progress_callback: Option<F>,
+    ) -> Result<PopulateStats>
     where
         F: Fn(i32, i64, i64, i64, i32) + Send + Sync,
     {
@@ -119,7 +127,8 @@ impl CatalogPopulator {
             {
                 Ok(result) => result,
                 Err(e) => {
-                    let error_msg = format!("Failed to fetch page at offset {}: {}", current_offset, e);
+                    let error_msg =
+                        format!("Failed to fetch page at offset {}: {}", current_offset, e);
                     tracing::error!("{}", error_msg);
                     self.db.update_sync_error(&self.game_domain, &error_msg)?;
                     return Err(e.context(error_msg));
@@ -134,7 +143,8 @@ impl CatalogPopulator {
             }
 
             // Convert to catalog records
-            let catalog_records: Vec<NexusCatalogRecord> = result.mods
+            let catalog_records: Vec<NexusCatalogRecord> = result
+                .mods
                 .iter()
                 .map(|m| {
                     // Parse updated_at timestamp to Unix timestamp if available
@@ -192,7 +202,11 @@ impl CatalogPopulator {
             // Check if we've reached the end
             current_offset += options.per_page;
             if current_offset >= result.total_count as i32 {
-                tracing::info!("Reached end of catalog (offset {} >= total {})", current_offset, result.total_count);
+                tracing::info!(
+                    "Reached end of catalog (offset {} >= total {})",
+                    current_offset,
+                    result.total_count
+                );
                 self.db.mark_sync_complete(&self.game_domain)?;
                 break;
             }

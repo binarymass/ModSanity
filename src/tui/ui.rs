@@ -77,20 +77,28 @@ pub fn draw(f: &mut Frame, app: &App, state: &AppState) {
         .unwrap_or(false);
     set_minimal_color_mode(minimal_mode);
 
+    let output_panel_height = if state.command_output_log.is_empty() {
+        0
+    } else {
+        4
+    };
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // Header
-            Constraint::Length(1), // Tab bar
-            Constraint::Min(10),   // Main content
-            Constraint::Length(3), // Footer/status
+            Constraint::Length(3),                   // Header
+            Constraint::Length(1),                   // Tab bar
+            Constraint::Min(10),                     // Main content
+            Constraint::Length(output_panel_height), // Command output
+            Constraint::Length(3),                   // Footer/status
         ])
         .split(f.area());
 
     draw_header(f, state, chunks[0]);
     draw_tabs(f, state, chunks[1]);
     draw_content(f, app, state, chunks[2]);
-    draw_footer(f, state, chunks[3]);
+    draw_command_output_panel(f, state, chunks[3]);
+    draw_footer(f, state, chunks[4]);
 
     // Draw confirmation dialog if active
     if let Some(dialog) = &state.show_confirm {
@@ -159,6 +167,27 @@ pub fn draw(f: &mut Frame, app: &App, state: &AppState) {
     }
 }
 
+fn draw_command_output_panel(f: &mut Frame, state: &AppState, area: Rect) {
+    if area.height == 0 {
+        return;
+    }
+
+    let text: Vec<Line> = state
+        .command_output_log
+        .iter()
+        .map(|line| Line::from(Span::styled(line.clone(), sfg(Color::LightRed))))
+        .collect();
+
+    let panel = Paragraph::new(text)
+        .block(
+            Block::default()
+                .title(" Command Output ")
+                .borders(Borders::TOP),
+        )
+        .wrap(Wrap { trim: true });
+    f.render_widget(panel, area);
+}
+
 /// Draw the header bar
 fn draw_header(f: &mut Frame, state: &AppState, area: Rect) {
     let game_name = state
@@ -204,7 +233,11 @@ fn draw_header(f: &mut Frame, state: &AppState, area: Rect) {
     );
 
     let header = Paragraph::new(title)
-        .style(themed(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)))
+        .style(themed(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ))
         .block(
             Block::default()
                 .borders(Borders::ALL)
@@ -216,7 +249,16 @@ fn draw_header(f: &mut Frame, state: &AppState, area: Rect) {
 
 /// Draw the tab bar
 fn draw_tabs(f: &mut Frame, state: &AppState, area: Rect) {
-    let titles = vec!["F1 Mods", "F2 Plugins", "F3 Profiles", "F4 Settings", "F5 Import", "F6 Queue", "F7 Catalog", "F8 Modlists"];
+    let titles = vec![
+        "F1 Mods",
+        "F2 Plugins",
+        "F3 Profiles",
+        "F4 Settings",
+        "F5 Import",
+        "F6 Queue",
+        "F7 Catalog",
+        "F8 Modlists",
+    ];
     let selected = match state.current_screen {
         Screen::Dashboard | Screen::Mods | Screen::ModDetails => 0,
         Screen::Plugins => 1,
@@ -226,17 +268,22 @@ fn draw_tabs(f: &mut Frame, state: &AppState, area: Rect) {
         Screen::DownloadQueue => 5,
         Screen::NexusCatalog => 6,
         Screen::ModlistEditor => 7,
-        Screen::GameSelect | Screen::FomodWizard | Screen::Collection | Screen::Browse | Screen::LoadOrder | Screen::ModlistReview => 0,
+        Screen::GameSelect
+        | Screen::FomodWizard
+        | Screen::Collection
+        | Screen::Browse
+        | Screen::LoadOrder
+        | Screen::ModlistReview => 0,
     };
 
     let tabs = Tabs::new(titles)
         .select(selected)
         .style(sfg(Color::DarkGray))
-        .highlight_style(
-            themed(Style::default()
+        .highlight_style(themed(
+            Style::default()
                 .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD)),
-        )
+                .add_modifier(Modifier::BOLD),
+        ))
         .divider("|");
 
     f.render_widget(tabs, area);
@@ -388,7 +435,11 @@ fn draw_mods_screen(f: &mut Frame, state: &AppState, area: Rect) {
             Line::from(""),
             Line::from("Download mods from nexusmods.com manually"),
         ])
-        .block(Block::default().title(" Installed Mods ").borders(Borders::ALL))
+        .block(
+            Block::default()
+                .title(" Installed Mods ")
+                .borders(Borders::ALL),
+        )
         .style(Style::default().fg(Color::DarkGray))
         .alignment(Alignment::Center);
 
@@ -411,7 +462,9 @@ fn draw_mods_screen(f: &mut Frame, state: &AppState, area: Rect) {
 
                 // Add category indicator if categorized
                 let category_indicator = if let Some(cat_id) = m.category_id {
-                    state.categories.iter()
+                    state
+                        .categories
+                        .iter()
                         .find(|c| c.id == Some(cat_id))
                         .map(|c| format!("[{}] ", &c.name[..c.name.len().min(3)]))
                         .unwrap_or_default()
@@ -430,12 +483,18 @@ fn draw_mods_screen(f: &mut Frame, state: &AppState, area: Rect) {
                     ""
                 };
 
-                ListItem::new(format!(" {} {}{}{} (v{})", status, category_indicator, update_indicator, m.name, m.version)).style(style)
+                ListItem::new(format!(
+                    " {} {}{}{} (v{})",
+                    status, category_indicator, update_indicator, m.name, m.version
+                ))
+                .style(style)
             })
             .collect();
 
         let mut title = if let Some(filter_id) = state.category_filter {
-            let cat_name = state.categories.iter()
+            let cat_name = state
+                .categories
+                .iter()
                 .find(|c| c.id == Some(filter_id))
                 .map(|c| c.name.as_str())
                 .unwrap_or("Unknown");
@@ -446,15 +505,15 @@ fn draw_mods_screen(f: &mut Frame, state: &AppState, area: Rect) {
 
         // Add search indicator if searching
         if !state.mod_search_query.is_empty() {
-            title = format!(" Installed Mods - Search: \"{}\" ({}) ", state.mod_search_query, filtered_mods.len());
+            title = format!(
+                " Installed Mods - Search: \"{}\" ({}) ",
+                state.mod_search_query,
+                filtered_mods.len()
+            );
         }
 
         let list = List::new(items)
-            .block(
-                Block::default()
-                    .title(title)
-                    .borders(Borders::ALL),
-            )
+            .block(Block::default().title(title).borders(Borders::ALL))
             .highlight_style(Style::default().add_modifier(Modifier::BOLD));
 
         // Use stateful rendering for proper scrolling
@@ -502,28 +561,41 @@ fn draw_mods_screen(f: &mut Frame, state: &AppState, area: Rect) {
                 details.push(Line::from(""));
                 details.push(Line::from(Span::styled(
                     "✨ Update Available!",
-                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
                 )));
                 details.push(Line::from(format!(
                     "Latest:   {} → {}",
-                    m.version,
-                    update_info.latest_version
+                    m.version, update_info.latest_version
                 )));
                 details.push(Line::from(format!(
                     "Updated:  {}",
-                    update_info.updated_at.split('T').next().unwrap_or(&update_info.updated_at)
+                    update_info
+                        .updated_at
+                        .split('T')
+                        .next()
+                        .unwrap_or(&update_info.updated_at)
                 )));
             }
         }
 
         let details_widget = Paragraph::new(details)
-            .block(Block::default().title(" Mod Details ").borders(Borders::ALL))
+            .block(
+                Block::default()
+                    .title(" Mod Details ")
+                    .borders(Borders::ALL),
+            )
             .wrap(Wrap { trim: true });
 
         f.render_widget(details_widget, chunks[2]);
     } else {
         let empty = Paragraph::new("No mod selected")
-            .block(Block::default().title(" Mod Details ").borders(Borders::ALL))
+            .block(
+                Block::default()
+                    .title(" Mod Details ")
+                    .borders(Borders::ALL),
+            )
             .style(Style::default().fg(Color::DarkGray));
 
         f.render_widget(empty, chunks[2]);
@@ -534,7 +606,9 @@ fn draw_mods_screen(f: &mut Frame, state: &AppState, area: Rect) {
 fn draw_mod_details(f: &mut Frame, state: &AppState, area: Rect) {
     // Apply the same category and search filters as the mods screen
     let search_lower = state.mod_search_query.to_lowercase();
-    let filtered_mods: Vec<&crate::mods::InstalledMod> = state.installed_mods.iter()
+    let filtered_mods: Vec<&crate::mods::InstalledMod> = state
+        .installed_mods
+        .iter()
         .filter(|m| {
             // Apply category filter
             let category_match = if let Some(filter_id) = state.category_filter {
@@ -583,7 +657,11 @@ fn draw_mod_details(f: &mut Frame, state: &AppState, area: Rect) {
     ];
 
     let details = Paragraph::new(text)
-        .block(Block::default().title(" Mod Details ").borders(Borders::ALL))
+        .block(
+            Block::default()
+                .title(" Mod Details ")
+                .borders(Borders::ALL),
+        )
         .wrap(Wrap { trim: true });
 
     f.render_widget(details, area);
@@ -636,22 +714,24 @@ fn draw_plugins_screen(f: &mut Frame, state: &AppState, area: Rect) {
                     crate::plugins::PluginType::Plugin => "ESP",
                 };
 
-                let base_style = if display_i == state.selected_plugin_index && state.plugin_reorder_mode {
-                    Style::default()
-                        .bg(Color::Yellow)
-                        .fg(Color::Black)
-                        .add_modifier(Modifier::BOLD)
-                } else if display_i == state.selected_plugin_index {
-                    Style::default()
-                        .bg(Color::DarkGray)
-                        .add_modifier(Modifier::BOLD)
-                } else if !p.enabled {
-                    Style::default().fg(Color::DarkGray)
-                } else {
-                    Style::default()
-                };
+                let base_style =
+                    if display_i == state.selected_plugin_index && state.plugin_reorder_mode {
+                        Style::default()
+                            .bg(Color::Yellow)
+                            .fg(Color::Black)
+                            .add_modifier(Modifier::BOLD)
+                    } else if display_i == state.selected_plugin_index {
+                        Style::default()
+                            .bg(Color::DarkGray)
+                            .add_modifier(Modifier::BOLD)
+                    } else if !p.enabled {
+                        Style::default().fg(Color::DarkGray)
+                    } else {
+                        Style::default()
+                    };
 
-                ListItem::new(format!(" {} [{}] {}", status, type_indicator, p.filename)).style(base_style)
+                ListItem::new(format!(" {} [{}] {}", status, type_indicator, p.filename))
+                    .style(base_style)
             })
             .collect();
 
@@ -660,11 +740,7 @@ fn draw_plugins_screen(f: &mut Frame, state: &AppState, area: Rect) {
         } else {
             ""
         };
-        let dirty_indicator = if state.plugin_dirty {
-            " (unsaved)"
-        } else {
-            ""
-        };
+        let dirty_indicator = if state.plugin_dirty { " (unsaved)" } else { "" };
 
         let mut title = format!(
             " Load Order ({}){}{}",
@@ -685,11 +761,7 @@ fn draw_plugins_screen(f: &mut Frame, state: &AppState, area: Rect) {
         }
 
         let list = List::new(items)
-            .block(
-                Block::default()
-                    .title(title)
-                    .borders(Borders::ALL),
-            )
+            .block(Block::default().title(title).borders(Borders::ALL))
             .highlight_style(Style::default().add_modifier(Modifier::BOLD));
 
         // Use stateful rendering for proper scrolling
@@ -700,7 +772,9 @@ fn draw_plugins_screen(f: &mut Frame, state: &AppState, area: Rect) {
     }
 
     // Plugin details or help
-    let selected_plugin = filtered_plugins.get(state.selected_plugin_index).map(|(_, p)| *p);
+    let selected_plugin = filtered_plugins
+        .get(state.selected_plugin_index)
+        .map(|(_, p)| *p);
     if let Some(p) = selected_plugin {
         let masters_str = if p.masters.is_empty() {
             "None".to_string()
@@ -732,7 +806,11 @@ fn draw_plugins_screen(f: &mut Frame, state: &AppState, area: Rect) {
         ];
 
         let details_widget = Paragraph::new(details)
-            .block(Block::default().title(" Plugin Details ").borders(Borders::ALL))
+            .block(
+                Block::default()
+                    .title(" Plugin Details ")
+                    .borders(Borders::ALL),
+            )
             .wrap(Wrap { trim: true });
 
         f.render_widget(details_widget, chunks[1]);
@@ -849,17 +927,27 @@ fn draw_collection_screen(f: &mut Frame, state: &AppState, area: Rect) {
             .iter()
             .enumerate()
             .map(|(i, mod_entry)| {
-                let is_installed = state.collection_mod_status
+                let is_installed = state
+                    .collection_mod_status
                     .get(&mod_entry.source.mod_id)
                     .copied()
                     .unwrap_or(false);
 
                 let status_icon = if is_installed { "✓" } else { "✗" };
-                let status_color = if is_installed { Color::Green } else { Color::Red };
+                let status_color = if is_installed {
+                    Color::Green
+                } else {
+                    Color::Red
+                };
 
-                let required_badge = if !mod_entry.optional { " [Required]" } else { "" };
+                let required_badge = if !mod_entry.optional {
+                    " [Required]"
+                } else {
+                    ""
+                };
 
-                let mod_name = mod_entry.name
+                let mod_name = mod_entry
+                    .name
                     .split(" - ")
                     .next()
                     .unwrap_or(&mod_entry.name);
@@ -873,7 +961,10 @@ fn draw_collection_screen(f: &mut Frame, state: &AppState, area: Rect) {
                 };
 
                 let line = Line::from(vec![
-                    Span::styled(format!(" {} ", status_icon), Style::default().fg(status_color)),
+                    Span::styled(
+                        format!(" {} ", status_icon),
+                        Style::default().fg(status_color),
+                    ),
                     Span::raw(mod_name),
                     Span::styled(required_badge, Style::default().fg(Color::Yellow)),
                 ]);
@@ -884,8 +975,17 @@ fn draw_collection_screen(f: &mut Frame, state: &AppState, area: Rect) {
 
         let stats = collection.stats();
         let installed_count = state.collection_mod_status.values().filter(|&&v| v).count();
-        let missing_required: Vec<_> = collection.mods.iter()
-            .filter(|m| !m.optional && !state.collection_mod_status.get(&m.source.mod_id).copied().unwrap_or(false))
+        let missing_required: Vec<_> = collection
+            .mods
+            .iter()
+            .filter(|m| {
+                !m.optional
+                    && !state
+                        .collection_mod_status
+                        .get(&m.source.mod_id)
+                        .copied()
+                        .unwrap_or(false)
+            })
             .collect();
 
         let list = List::new(items)
@@ -912,14 +1012,17 @@ fn draw_collection_screen(f: &mut Frame, state: &AppState, area: Rect) {
         let mut info_lines = vec![
             Line::from(Span::styled(
                 collection.info.name.clone(),
-                Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan),
+                Style::default()
+                    .add_modifier(Modifier::BOLD)
+                    .fg(Color::Cyan),
             )),
             Line::from(format!("By: {}", collection.info.author)),
             Line::from(""),
         ];
 
         if let Some(mod_entry) = selected_mod {
-            let is_installed = state.collection_mod_status
+            let is_installed = state
+                .collection_mod_status
                 .get(&mod_entry.source.mod_id)
                 .copied()
                 .unwrap_or(false);
@@ -936,11 +1039,21 @@ fn draw_collection_screen(f: &mut Frame, state: &AppState, area: Rect) {
             info_lines.push(Line::from(format!("File ID: {}", mod_entry.source.file_id)));
             info_lines.push(Line::from(""));
 
-            let status_text = if is_installed { "Installed ✓" } else { "Not Installed ✗" };
-            let status_color = if is_installed { Color::Green } else { Color::Red };
+            let status_text = if is_installed {
+                "Installed ✓"
+            } else {
+                "Not Installed ✗"
+            };
+            let status_color = if is_installed {
+                Color::Green
+            } else {
+                Color::Red
+            };
             info_lines.push(Line::from(Span::styled(
                 status_text,
-                Style::default().fg(status_color).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(status_color)
+                    .add_modifier(Modifier::BOLD),
             )));
 
             if !mod_entry.optional {
@@ -962,7 +1075,8 @@ fn draw_collection_screen(f: &mut Frame, state: &AppState, area: Rect) {
             info_lines.push(Line::from(""));
 
             for mod_entry in missing_required.iter().take(5) {
-                let mod_name = mod_entry.name
+                let mod_name = mod_entry
+                    .name
                     .split(" - ")
                     .next()
                     .unwrap_or(&mod_entry.name);
@@ -970,12 +1084,19 @@ fn draw_collection_screen(f: &mut Frame, state: &AppState, area: Rect) {
             }
 
             if missing_required.len() > 5 {
-                info_lines.push(Line::from(format!("  ... and {} more", missing_required.len() - 5)));
+                info_lines.push(Line::from(format!(
+                    "  ... and {} more",
+                    missing_required.len() - 5
+                )));
             }
         }
 
         let info = Paragraph::new(info_lines)
-            .block(Block::default().title(" Collection Info ").borders(Borders::ALL))
+            .block(
+                Block::default()
+                    .title(" Collection Info ")
+                    .borders(Borders::ALL),
+            )
             .wrap(ratatui::widgets::Wrap { trim: true });
 
         f.render_widget(info, chunks[1]);
@@ -1016,7 +1137,9 @@ fn draw_settings_screen(f: &mut Frame, app: &App, state: &AppState, area: Rect) 
         deployment_method_display,
         backup_display,
     ) = if let Ok(config) = app.config.try_read() {
-        let mod_dir = config.tui.default_mod_directory
+        let mod_dir = config
+            .tui
+            .default_mod_directory
             .clone()
             .unwrap_or_else(|| "Not set".to_string());
         let downloads_dir = config.downloads_dir().display().to_string();
@@ -1027,18 +1150,51 @@ fn draw_settings_screen(f: &mut Frame, app: &App, state: &AppState, area: Rect) 
             .proton_runtime
             .clone()
             .unwrap_or_else(|| "Custom command/path".to_string());
-        let minimal_color = if config.tui.minimal_color_mode { "Enabled" } else { "Disabled" }.to_string();
-        let xedit = config.external_tools.xedit_path.clone().unwrap_or_else(|| "Not set".to_string());
-        let ssedit = config.external_tools.ssedit_path.clone().unwrap_or_else(|| "Not set".to_string());
-        let fnis = config.external_tools.fnis_path.clone().unwrap_or_else(|| "Not set".to_string());
-        let nemesis = config.external_tools.nemesis_path.clone().unwrap_or_else(|| "Not set".to_string());
-        let symphony = config.external_tools.symphony_path.clone().unwrap_or_else(|| "Not set".to_string());
-        let bodyslide = config.external_tools.bodyslide_path.clone().unwrap_or_else(|| "Not set".to_string());
-        let outfit = config.external_tools.outfitstudio_path.clone().unwrap_or_else(|| "Not set".to_string());
+        let minimal_color = if config.tui.minimal_color_mode {
+            "Enabled"
+        } else {
+            "Disabled"
+        }
+        .to_string();
+        let xedit = config
+            .external_tools
+            .xedit_path
+            .clone()
+            .unwrap_or_else(|| "Not set".to_string());
+        let ssedit = config
+            .external_tools
+            .ssedit_path
+            .clone()
+            .unwrap_or_else(|| "Not set".to_string());
+        let fnis = config
+            .external_tools
+            .fnis_path
+            .clone()
+            .unwrap_or_else(|| "Not set".to_string());
+        let nemesis = config
+            .external_tools
+            .nemesis_path
+            .clone()
+            .unwrap_or_else(|| "Not set".to_string());
+        let symphony = config
+            .external_tools
+            .symphony_path
+            .clone()
+            .unwrap_or_else(|| "Not set".to_string());
+        let bodyslide = config
+            .external_tools
+            .bodyslide_path
+            .clone()
+            .unwrap_or_else(|| "Not set".to_string());
+        let outfit = config
+            .external_tools
+            .outfitstudio_path
+            .clone()
+            .unwrap_or_else(|| "Not set".to_string());
 
         let api_key = if let Some(ref key) = config.nexus_api_key {
             if key.len() > 8 {
-                format!("{}...{}", &key[..4], &key[key.len()-4..])
+                format!("{}...{}", &key[..4], &key[key.len() - 4..])
             } else if !key.is_empty() {
                 "****".to_string()
             } else {
@@ -1049,7 +1205,12 @@ fn draw_settings_screen(f: &mut Frame, app: &App, state: &AppState, area: Rect) 
         };
 
         let deployment_method = config.deployment.method.display_name().to_string();
-        let backup_originals = if config.deployment.backup_originals { "Yes" } else { "No" }.to_string();
+        let backup_originals = if config.deployment.backup_originals {
+            "Yes"
+        } else {
+            "No"
+        }
+        .to_string();
 
         (
             mod_dir,
@@ -1104,7 +1265,7 @@ fn draw_settings_screen(f: &mut Frame, app: &App, state: &AppState, area: Rect) 
         ("SSEEdit Path", ssedit_display),
         ("FNIS Path", fnis_display),
         ("Nemesis Path", nemesis_display),
-        ("Symphony Path", symphony_display),
+        ("Synthesis Path", symphony_display),
         ("BodySlide Path", bodyslide_display),
         ("Outfit Studio Path", outfit_display),
         ("Game Selection", "Change active game".to_string()),
@@ -1115,19 +1276,18 @@ fn draw_settings_screen(f: &mut Frame, app: &App, state: &AppState, area: Rect) 
         .enumerate()
         .map(|(i, (name, value))| {
             let style = if i == state.selected_setting_index {
-                themed(Style::default()
-                    .bg(Color::DarkGray)
-                    .add_modifier(Modifier::BOLD))
+                themed(
+                    Style::default()
+                        .bg(Color::DarkGray)
+                        .add_modifier(Modifier::BOLD),
+                )
             } else {
                 Style::default()
             };
 
             ListItem::new(vec![
                 Line::from(Span::styled(name.to_string(), style)),
-                Line::from(Span::styled(
-                    format!("  {}", value),
-                    sfg(Color::DarkGray),
-                )),
+                Line::from(Span::styled(format!("  {}", value), sfg(Color::DarkGray))),
             ])
         })
         .collect();
@@ -1146,12 +1306,18 @@ fn draw_settings_screen(f: &mut Frame, app: &App, state: &AppState, area: Rect) 
 fn draw_categories_sidebar(f: &mut Frame, state: &AppState, area: Rect) {
     // Build category list with "All" option at the top
     let mut items = vec![ListItem::new(Line::from(Span::styled(
-        if state.category_filter.is_none() { " > All Categories" } else { "   All Categories" },
         if state.category_filter.is_none() {
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+            " > All Categories"
+        } else {
+            "   All Categories"
+        },
+        if state.category_filter.is_none() {
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default()
-        }
+        },
     )))];
 
     // Add each category
@@ -1160,16 +1326,22 @@ fn draw_categories_sidebar(f: &mut Frame, state: &AppState, area: Rect) {
         let prefix = if is_selected { " > " } else { "   " };
 
         // Count mods in this category
-        let mod_count = state.installed_mods.iter()
+        let mod_count = state
+            .installed_mods
+            .iter()
             .filter(|m| m.category_id == category.id)
             .count();
 
-        let color = category.color.as_ref()
+        let color = category
+            .color
+            .as_ref()
             .and_then(|c| parse_color(c))
             .unwrap_or(Color::White);
 
         let style = if is_selected {
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(color)
         };
@@ -1180,13 +1352,12 @@ fn draw_categories_sidebar(f: &mut Frame, state: &AppState, area: Rect) {
         ))));
     }
 
-    let list = List::new(items)
-        .block(
-            Block::default()
-                .title(" Categories ")
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Cyan)),
-        );
+    let list = List::new(items).block(
+        Block::default()
+            .title(" Categories ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan)),
+    );
 
     let mut list_state = ratatui::widgets::ListState::default();
     list_state.select(Some(state.selected_category_index));
@@ -1342,12 +1513,17 @@ fn draw_requirements_dialog(f: &mut Frame, dialog: &crate::app::state::Requireme
     if dialog.missing_mods.is_empty() && dialog.dlc_requirements.is_empty() {
         text_lines.push(Line::from(Span::styled(
             "✓ All requirements satisfied!",
-            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
         )));
     } else {
         if dialog.installed_count > 0 {
             text_lines.push(Line::from(Span::styled(
-                format!("✓ {} requirement(s) already installed", dialog.installed_count),
+                format!(
+                    "✓ {} requirement(s) already installed",
+                    dialog.installed_count
+                ),
                 Style::default().fg(Color::Green),
             )));
             text_lines.push(Line::from(""));
@@ -1357,7 +1533,9 @@ fn draw_requirements_dialog(f: &mut Frame, dialog: &crate::app::state::Requireme
         if !dialog.missing_mods.is_empty() {
             text_lines.push(Line::from(Span::styled(
                 format!("⚠ {} missing mod(s):", dialog.missing_mods.len()),
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
             )));
             text_lines.push(Line::from(""));
 
@@ -1389,7 +1567,9 @@ fn draw_requirements_dialog(f: &mut Frame, dialog: &crate::app::state::Requireme
             text_lines.push(Line::from(""));
             text_lines.push(Line::from(Span::styled(
                 format!("📦 {} DLC requirement(s):", dialog.dlc_requirements.len()),
-                Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD),
             )));
             text_lines.push(Line::from(""));
 
@@ -1696,10 +1876,7 @@ fn draw_mod_install_input(f: &mut Frame, state: &AppState) {
         Line::from(""),
         Line::from("Enter full path to mod archive or downloads folder:"),
         Line::from(""),
-        Line::from(Span::styled(
-            input_text,
-            Style::default().fg(Color::Yellow),
-        )),
+        Line::from(Span::styled(input_text, Style::default().fg(Color::Yellow))),
         Line::from(""),
         Line::from("Examples:"),
         Line::from("  /home/user/Downloads/SkyUI-5.2SE.7z"),
@@ -1736,10 +1913,7 @@ fn draw_collection_input(f: &mut Frame, state: &AppState) {
         Line::from(""),
         Line::from("Enter path to Nexus Mods collection.json file:"),
         Line::from(""),
-        Line::from(Span::styled(
-            input_text,
-            Style::default().fg(Color::Yellow),
-        )),
+        Line::from(Span::styled(input_text, Style::default().fg(Color::Yellow))),
         Line::from(""),
         Line::from("Examples:"),
         Line::from("  /path/to/collection.json"),
@@ -1777,10 +1951,7 @@ fn draw_profile_name_input(f: &mut Frame, state: &AppState) {
         Line::from(""),
         Line::from("Enter a name for the new profile:"),
         Line::from(""),
-        Line::from(Span::styled(
-            input_text,
-            Style::default().fg(Color::Yellow),
-        )),
+        Line::from(Span::styled(input_text, Style::default().fg(Color::Yellow))),
         Line::from(""),
         Line::from("[Enter] Create  [Esc] Cancel"),
     ];
@@ -1813,10 +1984,7 @@ fn draw_mod_directory_input(f: &mut Frame, state: &AppState) {
         Line::from(""),
         Line::from("Set default mod directory:"),
         Line::from(""),
-        Line::from(Span::styled(
-            input_text,
-            Style::default().fg(Color::Yellow),
-        )),
+        Line::from(Span::styled(input_text, Style::default().fg(Color::Yellow))),
         Line::from(""),
         Line::from("This directory will be used for bulk installation."),
         Line::from("Leave empty to disable."),
@@ -1852,10 +2020,7 @@ fn draw_downloads_directory_input(f: &mut Frame, state: &AppState) {
         Line::from(""),
         Line::from("Set downloads directory override:"),
         Line::from(""),
-        Line::from(Span::styled(
-            input_text,
-            Style::default().fg(Color::Yellow),
-        )),
+        Line::from(Span::styled(input_text, Style::default().fg(Color::Yellow))),
         Line::from(""),
         Line::from("Downloaded archives will be stored here."),
         Line::from("Leave empty to use default."),
@@ -1891,10 +2056,7 @@ fn draw_staging_directory_input(f: &mut Frame, state: &AppState) {
         Line::from(""),
         Line::from("Set staging/installed mods directory override:"),
         Line::from(""),
-        Line::from(Span::styled(
-            input_text,
-            Style::default().fg(Color::Yellow),
-        )),
+        Line::from(Span::styled(input_text, Style::default().fg(Color::Yellow))),
         Line::from(""),
         Line::from("Installed mods are extracted under this root (per game)."),
         Line::from("Leave empty to use default."),
@@ -1998,10 +2160,7 @@ fn draw_nexus_api_key_input(f: &mut Frame, state: &AppState) {
         Line::from(""),
         Line::from("Enter your NexusMods Personal API Key:"),
         Line::from(""),
-        Line::from(Span::styled(
-            input_text,
-            Style::default().fg(Color::Yellow),
-        )),
+        Line::from(Span::styled(input_text, Style::default().fg(Color::Yellow))),
         Line::from(""),
         Line::from("You can find your Personal API Key at:"),
         Line::from(Span::styled(
@@ -2045,7 +2204,9 @@ fn draw_mod_search_input(f: &mut Frame, state: &AppState) {
         Line::from(""),
         Line::from(Span::styled(
             format!("  {} █", input_text),
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
         Line::from("Press Enter to search, Esc to cancel"),
@@ -2082,7 +2243,9 @@ fn draw_plugin_search_input(f: &mut Frame, state: &AppState) {
         Line::from(""),
         Line::from(Span::styled(
             format!("  {} █", input_text),
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
         Line::from("Press Enter to search, Esc to cancel"),
@@ -2122,7 +2285,9 @@ fn draw_plugin_position_input(f: &mut Frame, state: &AppState) {
         Line::from(""),
         Line::from(Span::styled(
             format!("  {} █", input_text),
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
         Line::from(format!("Current position: {}", current_position)),
@@ -2157,7 +2322,11 @@ fn draw_fomod_component_selection(f: &mut Frame, state: &AppState) {
         .map(|(i, component)| {
             let is_selected = state.selected_fomod_components.contains(&i);
             let checkbox = if is_selected { "[X]" } else { "[ ]" };
-            let required = if component.is_required { " (Required)" } else { "" };
+            let required = if component.is_required {
+                " (Required)"
+            } else {
+                ""
+            };
 
             let style = if i == state.fomod_selection_index {
                 Style::default()
@@ -2167,8 +2336,11 @@ fn draw_fomod_component_selection(f: &mut Frame, state: &AppState) {
                 Style::default()
             };
 
-            ListItem::new(format!(" {} {}{}", checkbox, component.description, required))
-                .style(style)
+            ListItem::new(format!(
+                " {} {}{}",
+                checkbox, component.description, required
+            ))
+            .style(style)
         })
         .collect();
 
@@ -2234,15 +2406,16 @@ fn draw_installation_progress(f: &mut Frame, progress: &crate::app::state::Insta
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(4),  // Overall progress section
-                Constraint::Length(1),  // Spacer
-                Constraint::Length(6),  // Current mod progress section
-                Constraint::Min(1),     // Info text
+                Constraint::Length(4), // Overall progress section
+                Constraint::Length(1), // Spacer
+                Constraint::Length(6), // Current mod progress section
+                Constraint::Min(1),    // Info text
             ])
             .split(area);
 
         // Overall progress gauge
-        if let (Some(current_idx), Some(total)) = (progress.current_mod_index, progress.total_mods) {
+        if let (Some(current_idx), Some(total)) = (progress.current_mod_index, progress.total_mods)
+        {
             let overall_percent = if total > 0 {
                 ((current_idx as f64 / total as f64) * 100.0) as u16
             } else {
@@ -2276,8 +2449,7 @@ fn draw_installation_progress(f: &mut Frame, progress: &crate::app::state::Insta
             .percent(progress.percent)
             .label(format!(
                 "{}/{} files",
-                progress.processed_files,
-                progress.total_files
+                progress.processed_files, progress.total_files
             ));
 
         f.render_widget(current_gauge, chunks[2]);
@@ -2295,8 +2467,7 @@ fn draw_installation_progress(f: &mut Frame, progress: &crate::app::state::Insta
             )),
         ];
 
-        let info = Paragraph::new(info_text)
-            .alignment(Alignment::Center);
+        let info = Paragraph::new(info_text).alignment(Alignment::Center);
 
         f.render_widget(info, chunks[3]);
     } else {
@@ -2322,7 +2493,10 @@ fn draw_installation_progress(f: &mut Frame, progress: &crate::app::state::Insta
 }
 
 /// Draw categorization progress dialog
-fn draw_categorization_progress(f: &mut Frame, progress: &crate::app::state::CategorizationProgress) {
+fn draw_categorization_progress(
+    f: &mut Frame,
+    progress: &crate::app::state::CategorizationProgress,
+) {
     let area = centered_rect(60, 30, f.area());
 
     f.render_widget(Clear, area);
@@ -2346,17 +2520,15 @@ fn draw_categorization_progress(f: &mut Frame, progress: &crate::app::state::Cat
         .percent(percent)
         .label(format!(
             "{}/{} mods ({} categorized)",
-            progress.current_index,
-            progress.total_mods,
-            progress.categorized_count
+            progress.current_index, progress.total_mods, progress.categorized_count
         ));
 
     // Split area for gauge and current mod info
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // Gauge
-            Constraint::Min(1),     // Info text
+            Constraint::Length(3), // Gauge
+            Constraint::Min(1),    // Info text
         ])
         .split(area);
 
@@ -2375,8 +2547,7 @@ fn draw_categorization_progress(f: &mut Frame, progress: &crate::app::state::Cat
         )),
     ];
 
-    let info = Paragraph::new(info_text)
-        .alignment(Alignment::Center);
+    let info = Paragraph::new(info_text).alignment(Alignment::Center);
 
     f.render_widget(info, chunks[1]);
 }
@@ -2406,16 +2577,15 @@ fn draw_import_progress(f: &mut Frame, progress: &crate::app::state::ImportProgr
         .percent(percent)
         .label(format!(
             "{}/{} plugins",
-            progress.current_index,
-            progress.total_plugins
+            progress.current_index, progress.total_plugins
         ));
 
     // Split area for gauge and current plugin info
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // Gauge
-            Constraint::Min(1),     // Info text
+            Constraint::Length(3), // Gauge
+            Constraint::Min(1),    // Info text
         ])
         .split(area);
 
@@ -2439,8 +2609,7 @@ fn draw_import_progress(f: &mut Frame, progress: &crate::app::state::ImportProgr
         )),
     ];
 
-    let info = Paragraph::new(info_text)
-        .alignment(Alignment::Center);
+    let info = Paragraph::new(info_text).alignment(Alignment::Center);
 
     f.render_widget(info, chunks[1]);
 }
@@ -2461,7 +2630,10 @@ fn draw_browse_screen(f: &mut Frame, state: &AppState, area: Rect) {
     } else if state.browse_showing_default {
         format!(" Showing: Top Mods (Press 's' to search, 'f' to filter/sort)")
     } else {
-        format!(" Search: {} (Press 's' to search, 'f' to filter/sort)", state.browse_query)
+        format!(
+            " Search: {} (Press 's' to search, 'f' to filter/sort)",
+            state.browse_query
+        )
     };
 
     let search_style = if state.input_mode == InputMode::BrowseSearch {
@@ -2470,17 +2642,15 @@ fn draw_browse_screen(f: &mut Frame, state: &AppState, area: Rect) {
         Style::default().fg(Color::White)
     };
 
-    let search_bar = Paragraph::new(search_text)
-        .style(search_style)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_style(if state.input_mode == InputMode::BrowseSearch {
-                    Style::default().fg(Color::Yellow)
-                } else {
-                    Style::default()
-                }),
-        );
+    let search_bar = Paragraph::new(search_text).style(search_style).block(
+        Block::default().borders(Borders::ALL).border_style(
+            if state.input_mode == InputMode::BrowseSearch {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default()
+            },
+        ),
+    );
 
     f.render_widget(search_bar, chunks[0]);
 
@@ -2605,9 +2775,15 @@ fn draw_browse_screen(f: &mut Frame, state: &AppState, area: Rect) {
             Line::from(format!("Category:   {}", result.category)),
             Line::from(format!("Version:    {}", result.version)),
             Line::from(""),
-            Line::from(Span::styled("Stats:", Style::default().add_modifier(Modifier::BOLD))),
+            Line::from(Span::styled(
+                "Stats:",
+                Style::default().add_modifier(Modifier::BOLD),
+            )),
             Line::from(format!("Downloads:  {}", format_number(result.downloads))),
-            Line::from(format!("Endorsements: {}", format_number(result.endorsements))),
+            Line::from(format!(
+                "Endorsements: {}",
+                format_number(result.endorsements)
+            )),
             Line::from(format!("Updated:    {}", result.updated_at)),
             Line::from(""),
         ];
@@ -2628,14 +2804,22 @@ fn draw_browse_screen(f: &mut Frame, state: &AppState, area: Rect) {
         }
 
         let details_widget = Paragraph::new(details)
-            .block(Block::default().title(" Mod Details ").borders(Borders::ALL))
+            .block(
+                Block::default()
+                    .title(" Mod Details ")
+                    .borders(Borders::ALL),
+            )
             .wrap(Wrap { trim: true });
 
         f.render_widget(details_widget, result_chunks[1]);
     } else {
         let empty = Paragraph::new(" No mod selected ")
             .style(Style::default().fg(Color::DarkGray))
-            .block(Block::default().title(" Mod Details ").borders(Borders::ALL))
+            .block(
+                Block::default()
+                    .title(" Mod Details ")
+                    .borders(Borders::ALL),
+            )
             .alignment(Alignment::Center);
         f.render_widget(empty, result_chunks[1]);
     }
@@ -2736,7 +2920,7 @@ fn draw_download_progress(f: &mut Frame, progress: &crate::app::state::DownloadP
             Constraint::Length(1), // Title
             Constraint::Length(1), // Spacer
             Constraint::Length(3), // Progress bar
-            Constraint::Min(1),   // Info
+            Constraint::Min(1),    // Info
         ])
         .split(area);
 
@@ -2754,11 +2938,7 @@ fn draw_download_progress(f: &mut Frame, progress: &crate::app::state::DownloadP
 
     let gauge = Gauge::default()
         .block(Block::default())
-        .gauge_style(
-            Style::default()
-                .fg(Color::Cyan)
-                .bg(Color::Black),
-        )
+        .gauge_style(Style::default().fg(Color::Cyan).bg(Color::Black))
         .percent(percent)
         .label(format!(
             "{} / {} ({}%)",
@@ -2852,7 +3032,11 @@ fn truncate_filename(filename: &str, max_len: usize) -> String {
         filename.to_string()
     } else {
         let half = (max_len - 3) / 2;
-        format!("{}...{}", &filename[..half], &filename[filename.len() - half..])
+        format!(
+            "{}...{}",
+            &filename[..half],
+            &filename[filename.len() - half..]
+        )
     }
 }
 
@@ -2937,7 +3121,10 @@ fn draw_load_order_screen(f: &mut Frame, state: &AppState, area: Rect) {
             };
 
             ListItem::new(Line::from(vec![
-                Span::styled(format!(" {} ", priority_label), Style::default().fg(Color::Cyan)),
+                Span::styled(
+                    format!(" {} ", priority_label),
+                    Style::default().fg(Color::Cyan),
+                ),
                 Span::styled(format!("[{}]", status), base_style),
                 Span::styled(format!(" {} ", conflict_marker), conflict_style),
                 Span::styled(m.name.clone(), base_style),
@@ -2994,9 +3181,7 @@ fn draw_load_order_detail(f: &mut Frame, state: &AppState, area: Rect) {
         } else {
             lines.push(Line::from(Span::styled(
                 format!("{} conflict(s):", relevant.len()),
-                Style::default()
-                    .fg(Color::Red)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
             )));
             lines.push(Line::from(""));
 
@@ -3081,10 +3266,7 @@ fn draw_import_file_input(f: &mut Frame, state: &AppState) {
         Line::from(""),
         Line::from("Enter path to modlist.txt:"),
         Line::from(""),
-        Line::from(Span::styled(
-            input_text,
-            Style::default().fg(Color::Yellow),
-        )),
+        Line::from(Span::styled(input_text, Style::default().fg(Color::Yellow))),
         Line::from(""),
         Line::from("This should be the path to your MO2 modlist.txt file."),
         Line::from("Example: ~/MO2/profiles/Default/modlist.txt"),
@@ -3109,9 +3291,9 @@ fn draw_import_screen(f: &mut Frame, state: &AppState, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(7),  // Instructions
-            Constraint::Length(3),  // File path input
-            Constraint::Min(5),     // Recent imports
+            Constraint::Length(7), // Instructions
+            Constraint::Length(3), // File path input
+            Constraint::Min(5),    // Recent imports
         ])
         .split(area);
 
@@ -3123,8 +3305,8 @@ fn draw_import_screen(f: &mut Frame, state: &AppState, area: Rect) {
         Line::from("  automatically matches plugins to NexusMods, and creates"),
         Line::from("  a download queue for batch installation."),
     ];
-    let instructions_widget = Paragraph::new(instructions)
-        .block(Block::default().borders(Borders::ALL));
+    let instructions_widget =
+        Paragraph::new(instructions).block(Block::default().borders(Borders::ALL));
     f.render_widget(instructions_widget, chunks[0]);
 
     // File path input
@@ -3133,10 +3315,11 @@ fn draw_import_screen(f: &mut Frame, state: &AppState, area: Rect) {
     } else {
         &state.import_file_path
     };
-    let input_widget = Paragraph::new(input_text)
-        .block(Block::default()
+    let input_widget = Paragraph::new(input_text).block(
+        Block::default()
             .title(" Modlist File Path (i to edit, Enter to import) ")
-            .borders(Borders::ALL));
+            .borders(Borders::ALL),
+    );
     f.render_widget(input_widget, chunks[1]);
 
     // Recent imports placeholder
@@ -3145,8 +3328,7 @@ fn draw_import_screen(f: &mut Frame, state: &AppState, area: Rect) {
         Line::from(""),
         Line::from("  No recent imports"),
     ];
-    let recent_widget = Paragraph::new(recent)
-        .block(Block::default().borders(Borders::ALL));
+    let recent_widget = Paragraph::new(recent).block(Block::default().borders(Borders::ALL));
     f.render_widget(recent_widget, chunks[2]);
 }
 
@@ -3155,25 +3337,42 @@ fn draw_import_review_screen(f: &mut Frame, state: &AppState, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),   // Summary
-            Constraint::Min(10),     // Results list
-            Constraint::Length(8),   // Details/alternatives
+            Constraint::Length(3), // Summary
+            Constraint::Min(10),   // Results list
+            Constraint::Length(8), // Details/alternatives
         ])
         .split(area);
 
     // Summary
-    let auto_matched = state.import_results.iter().filter(|r| r.confidence.is_high()).count();
-    let needs_review = state.import_results.iter().filter(|r| r.confidence.needs_review()).count();
-    let no_matches = state.import_results.iter().filter(|r| r.confidence.is_none()).count();
+    let auto_matched = state
+        .import_results
+        .iter()
+        .filter(|r| r.confidence.is_high())
+        .count();
+    let needs_review = state
+        .import_results
+        .iter()
+        .filter(|r| r.confidence.needs_review())
+        .count();
+    let no_matches = state
+        .import_results
+        .iter()
+        .filter(|r| r.confidence.is_none())
+        .count();
 
     let summary = format!(
         " Total: {} | Auto-matched: {} | Needs Review: {} | No Matches: {} ",
-        state.import_results.len(), auto_matched, needs_review, no_matches
+        state.import_results.len(),
+        auto_matched,
+        needs_review,
+        no_matches
     );
     let summary_widget = Paragraph::new(summary)
-        .block(Block::default()
-            .title(" Import Results ")
-            .borders(Borders::ALL))
+        .block(
+            Block::default()
+                .title(" Import Results ")
+                .borders(Borders::ALL),
+        )
         .style(Style::default().add_modifier(Modifier::BOLD));
     f.render_widget(summary_widget, chunks[0]);
 
@@ -3198,7 +3397,9 @@ fn draw_import_review_screen(f: &mut Frame, state: &AppState, area: Rect) {
             };
 
             let style = if i == state.selected_import_index {
-                Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .bg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
             };
@@ -3211,10 +3412,11 @@ fn draw_import_review_screen(f: &mut Frame, state: &AppState, area: Rect) {
         })
         .collect();
 
-    let list = List::new(items)
-        .block(Block::default()
+    let list = List::new(items).block(
+        Block::default()
             .title(" Matches (↑/↓ to navigate, Enter to create queue) ")
-            .borders(Borders::ALL));
+            .borders(Borders::ALL),
+    );
     let mut list_state = ratatui::widgets::ListState::default();
     list_state.select(Some(state.selected_import_index));
     f.render_stateful_widget(list, chunks[1], &mut list_state);
@@ -3227,21 +3429,28 @@ fn draw_import_review_screen(f: &mut Frame, state: &AppState, area: Rect) {
         ];
 
         if let Some(best) = &result.best_match {
-            details.push(Line::from(format!("Match: {} (by {})", best.name, best.author)));
-            details.push(Line::from(format!("Confidence: {:.0}%", result.confidence.score() * 100.0)));
+            details.push(Line::from(format!(
+                "Match: {} (by {})",
+                best.name, best.author
+            )));
+            details.push(Line::from(format!(
+                "Confidence: {:.0}%",
+                result.confidence.score() * 100.0
+            )));
             details.push(Line::from(format!("Downloads: {}", best.downloads)));
         } else {
             details.push(Line::from("No matches found - will need manual resolution"));
         }
 
         if !result.alternatives.is_empty() {
-            details.push(Line::from(format!("\n{} alternative(s) available", result.alternatives.len())));
+            details.push(Line::from(format!(
+                "\n{} alternative(s) available",
+                result.alternatives.len()
+            )));
         }
 
         let details_widget = Paragraph::new(details)
-            .block(Block::default()
-                .title(" Details ")
-                .borders(Borders::ALL));
+            .block(Block::default().title(" Details ").borders(Borders::ALL));
         f.render_widget(details_widget, chunks[2]);
     }
 }
@@ -3283,14 +3492,36 @@ fn draw_queue_screen(f: &mut Frame, state: &AppState, area: Rect) {
         .split(area);
 
     // Status bar
-    let pending = state.queue_entries.iter().filter(|e| matches!(e.status, crate::queue::QueueStatus::Pending | crate::queue::QueueStatus::Matched)).count();
+    let pending = state
+        .queue_entries
+        .iter()
+        .filter(|e| {
+            matches!(
+                e.status,
+                crate::queue::QueueStatus::Pending | crate::queue::QueueStatus::Matched
+            )
+        })
+        .count();
     let downloading = state
         .queue_entries
         .iter()
-        .filter(|e| matches!(e.status, crate::queue::QueueStatus::Downloading | crate::queue::QueueStatus::Installing))
+        .filter(|e| {
+            matches!(
+                e.status,
+                crate::queue::QueueStatus::Downloading | crate::queue::QueueStatus::Installing
+            )
+        })
         .count();
-    let completed = state.queue_entries.iter().filter(|e| matches!(e.status, crate::queue::QueueStatus::Completed)).count();
-    let failed = state.queue_entries.iter().filter(|e| matches!(e.status, crate::queue::QueueStatus::Failed)).count();
+    let completed = state
+        .queue_entries
+        .iter()
+        .filter(|e| matches!(e.status, crate::queue::QueueStatus::Completed))
+        .count();
+    let failed = state
+        .queue_entries
+        .iter()
+        .filter(|e| matches!(e.status, crate::queue::QueueStatus::Failed))
+        .count();
 
     let status_text = if guided {
         if state.queue_processing {
@@ -3299,7 +3530,10 @@ fn draw_queue_screen(f: &mut Frame, state: &AppState, area: Rect) {
                 pending, downloading, completed, failed
             )
         } else {
-            format!(" Queue: {} pending, {} completed, {} failed ", pending, completed, failed)
+            format!(
+                " Queue: {} pending, {} completed, {} failed ",
+                pending, completed, failed
+            )
         }
     } else if state.queue_processing {
         format!(
@@ -3314,9 +3548,11 @@ fn draw_queue_screen(f: &mut Frame, state: &AppState, area: Rect) {
     };
 
     let status_widget = Paragraph::new(status_text)
-        .block(Block::default()
-            .title(" Download Queue ")
-            .borders(Borders::ALL))
+        .block(
+            Block::default()
+                .title(" Download Queue ")
+                .borders(Borders::ALL),
+        )
         .style(Style::default().add_modifier(Modifier::BOLD));
     f.render_widget(status_widget, chunks[0]);
 
@@ -3343,7 +3579,9 @@ fn draw_queue_screen(f: &mut Frame, state: &AppState, area: Rect) {
             };
 
             let style = if i == state.selected_queue_index {
-                Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .bg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
             };
@@ -3356,10 +3594,11 @@ fn draw_queue_screen(f: &mut Frame, state: &AppState, area: Rect) {
         })
         .collect();
 
-    let list = List::new(items)
-        .block(Block::default()
+    let list = List::new(items).block(
+        Block::default()
             .title(" Queue Entries (↑/↓ to navigate) ")
-            .borders(Borders::ALL));
+            .borders(Borders::ALL),
+    );
     let mut list_state = ratatui::widgets::ListState::default();
     list_state.select(Some(state.selected_queue_index));
     f.render_stateful_widget(list, chunks[1], &mut list_state);
@@ -3382,18 +3621,27 @@ fn draw_queue_screen(f: &mut Frame, state: &AppState, area: Rect) {
         }
 
         if let Some(err) = &entry.error {
-            details.push(Line::from(format!("Error: {}", err)).style(Style::default().fg(Color::Red)));
+            details
+                .push(Line::from(format!("Error: {}", err)).style(Style::default().fg(Color::Red)));
         }
 
         let active_downloads: Vec<_> = state
             .queue_entries
             .iter()
-            .filter(|e| matches!(e.status, crate::queue::QueueStatus::Downloading | crate::queue::QueueStatus::Installing))
+            .filter(|e| {
+                matches!(
+                    e.status,
+                    crate::queue::QueueStatus::Downloading | crate::queue::QueueStatus::Installing
+                )
+            })
             .take(3)
             .collect();
         if !active_downloads.is_empty() {
             details.push(Line::from(""));
-            details.push(Line::from("Active transfers:").style(Style::default().add_modifier(Modifier::BOLD)));
+            details.push(
+                Line::from("Active transfers:")
+                    .style(Style::default().add_modifier(Modifier::BOLD)),
+            );
             for active in active_downloads {
                 let label = truncate_for_queue(&active.mod_name, 22);
                 let icon = match active.status {
@@ -3413,23 +3661,30 @@ fn draw_queue_screen(f: &mut Frame, state: &AppState, area: Rect) {
         if !entry.alternatives.is_empty() {
             details.push(Line::from(format!(
                 "Alternative: {}/{} (h/l to cycle, m to apply)",
-                state.selected_queue_alternative_index.saturating_add(1).min(entry.alternatives.len()),
+                state
+                    .selected_queue_alternative_index
+                    .saturating_add(1)
+                    .min(entry.alternatives.len()),
                 entry.alternatives.len()
             )));
-            if let Some(alt) = entry.alternatives.get(state.selected_queue_alternative_index.min(entry.alternatives.len() - 1)) {
+            if let Some(alt) = entry.alternatives.get(
+                state
+                    .selected_queue_alternative_index
+                    .min(entry.alternatives.len() - 1),
+            ) {
                 details.push(Line::from(format!("  {} (id: {})", alt.name, alt.mod_id)));
             }
         } else if matches!(
             entry.status,
             crate::queue::QueueStatus::NeedsManual | crate::queue::QueueStatus::NeedsReview
         ) {
-            details.push(Line::from("No alternatives. Press M to enter Nexus mod ID."));
+            details.push(Line::from(
+                "No alternatives. Press M to enter Nexus mod ID.",
+            ));
         }
 
         let details_widget = Paragraph::new(details)
-            .block(Block::default()
-                .title(" Details ")
-                .borders(Borders::ALL));
+            .block(Block::default().title(" Details ").borders(Borders::ALL));
         f.render_widget(details_widget, chunks[2]);
     }
 }
@@ -3491,10 +3746,7 @@ fn draw_save_modlist_input(f: &mut Frame, state: &AppState) {
         Line::from(format!("Format: {} [Tab to toggle]", format_hint)),
         Line::from(""),
         Line::from("Path:"),
-        Line::from(Span::styled(
-            input_text,
-            Style::default().fg(Color::Yellow),
-        )),
+        Line::from(Span::styled(input_text, Style::default().fg(Color::Yellow))),
         Line::from(""),
         Line::from("Examples:"),
         Line::from("  ~/modlists/my-setup.json"),
@@ -3532,10 +3784,7 @@ fn draw_load_modlist_input(f: &mut Frame, state: &AppState) {
         Line::from(" Load Modlist ").style(Style::default().add_modifier(Modifier::BOLD)),
         Line::from(""),
         Line::from("Path:"),
-        Line::from(Span::styled(
-            input_text,
-            Style::default().fg(Color::Yellow),
-        )),
+        Line::from(Span::styled(input_text, Style::default().fg(Color::Yellow))),
         Line::from(""),
         Line::from("Supports:"),
         Line::from("  • Native ModSanity JSON format"),
@@ -3563,8 +3812,8 @@ fn draw_modlist_review_screen(f: &mut Frame, state: &AppState, area: Rect) {
     let review = match &state.modlist_review_data {
         Some(r) => r,
         None => {
-            let p = Paragraph::new("No modlist loaded")
-                .block(Block::default().borders(Borders::ALL));
+            let p =
+                Paragraph::new("No modlist loaded").block(Block::default().borders(Borders::ALL));
             f.render_widget(p, area);
             return;
         }
@@ -3598,15 +3847,17 @@ fn draw_modlist_review_screen(f: &mut Frame, state: &AppState, area: Rect) {
         Line::from("[Enter] Queue Downloads  [Esc] Cancel"),
     ];
 
-    let summary = Paragraph::new(summary_text)
-        .block(Block::default()
+    let summary = Paragraph::new(summary_text).block(
+        Block::default()
             .title(" Modlist Review ")
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Cyan)));
+            .border_style(Style::default().fg(Color::Cyan)),
+    );
     f.render_widget(summary, chunks[0]);
 
     // Needs download list (scrollable)
-    let download_items: Vec<ListItem> = review.needs_download
+    let download_items: Vec<ListItem> = review
+        .needs_download
         .iter()
         .enumerate()
         .map(|(idx, entry)| {
@@ -3621,29 +3872,35 @@ fn draw_modlist_review_screen(f: &mut Frame, state: &AppState, area: Rect) {
         })
         .collect();
 
-    let download_list = List::new(download_items)
-        .block(Block::default()
-            .title(format!(" Mods to Download ({}) ", review.needs_download.len()))
+    let download_list = List::new(download_items).block(
+        Block::default()
+            .title(format!(
+                " Mods to Download ({}) ",
+                review.needs_download.len()
+            ))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Yellow)));
+            .border_style(Style::default().fg(Color::Yellow)),
+    );
     let mut list_state = ratatui::widgets::ListState::default();
     list_state.select(Some(state.selected_modlist_entry));
     f.render_stateful_widget(download_list, chunks[1], &mut list_state);
 
     // Already installed list
-    let installed_items: Vec<ListItem> = review.already_installed
+    let installed_items: Vec<ListItem> = review
+        .already_installed
         .iter()
-        .map(|name| {
-            ListItem::new(format!("  ✓ {}", name))
-                .style(Style::default().fg(Color::Green))
-        })
+        .map(|name| ListItem::new(format!("  ✓ {}", name)).style(Style::default().fg(Color::Green)))
         .collect();
 
-    let installed_list = List::new(installed_items)
-        .block(Block::default()
-            .title(format!(" Already Installed ({}) ", review.already_installed.len()))
+    let installed_list = List::new(installed_items).block(
+        Block::default()
+            .title(format!(
+                " Already Installed ({}) ",
+                review.already_installed.len()
+            ))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Green)));
+            .border_style(Style::default().fg(Color::Green)),
+    );
     f.render_widget(installed_list, chunks[2]);
 }
 
@@ -3662,10 +3919,7 @@ fn draw_catalog_search_input(f: &mut Frame, state: &AppState) {
         Line::from(""),
         Line::from(" Search Catalog ").style(Style::default().add_modifier(Modifier::BOLD)),
         Line::from(""),
-        Line::from(Span::styled(
-            input_text,
-            Style::default().fg(Color::Yellow),
-        )),
+        Line::from(Span::styled(input_text, Style::default().fg(Color::Yellow))),
         Line::from(""),
         Line::from("[Enter] Search  [Esc] Cancel"),
     ];
@@ -3697,10 +3951,7 @@ fn draw_modlist_name_input(f: &mut Frame, state: &AppState) {
         Line::from(""),
         Line::from(" New Modlist ").style(Style::default().add_modifier(Modifier::BOLD)),
         Line::from(""),
-        Line::from(Span::styled(
-            input_text,
-            Style::default().fg(Color::Yellow),
-        )),
+        Line::from(Span::styled(input_text, Style::default().fg(Color::Yellow))),
         Line::from(""),
         Line::from("[Enter] Create  [Esc] Cancel"),
     ];
@@ -3754,7 +4005,8 @@ fn draw_modlist_add_directory_input(f: &mut Frame, state: &AppState) {
 
     let text = vec![
         Line::from(""),
-        Line::from(" Add From Local Directory ").style(Style::default().add_modifier(Modifier::BOLD)),
+        Line::from(" Add From Local Directory ")
+            .style(Style::default().add_modifier(Modifier::BOLD)),
         Line::from(""),
         Line::from("Directory to scan recursively for archives (.zip/.7z/.rar):"),
         Line::from(Span::styled(
@@ -3789,9 +4041,9 @@ fn draw_modlist_editor_screen(f: &mut Frame, state: &AppState, area: Rect) {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(3),  // Title
+                    Constraint::Length(3), // Title
                     Constraint::Min(5),    // List
-                    Constraint::Length(3),  // Help
+                    Constraint::Length(3), // Help
                 ])
                 .split(area);
 
@@ -3802,24 +4054,33 @@ fn draw_modlist_editor_screen(f: &mut Frame, state: &AppState, area: Rect) {
                 "Saved Modlists"
             };
             let title = Paragraph::new(title_text)
-                .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+                .style(
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                )
                 .alignment(Alignment::Center)
                 .block(Block::default().borders(Borders::ALL));
             f.render_widget(title, chunks[0]);
 
             // Modlist list
             if state.saved_modlists.is_empty() {
-                let empty = Paragraph::new("No saved modlists. Import a modlist via F5 or press 'n' to create one.")
-                    .alignment(Alignment::Center)
-                    .block(Block::default().borders(Borders::ALL).title(" Modlists "));
+                let empty = Paragraph::new(
+                    "No saved modlists. Import a modlist via F5 or press 'n' to create one.",
+                )
+                .alignment(Alignment::Center)
+                .block(Block::default().borders(Borders::ALL).title(" Modlists "));
                 f.render_widget(empty, chunks[1]);
             } else {
-                let items: Vec<ListItem> = state.saved_modlists
+                let items: Vec<ListItem> = state
+                    .saved_modlists
                     .iter()
                     .enumerate()
                     .map(|(i, ml)| {
                         let style = if i == state.selected_saved_modlist_index {
-                            Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD)
+                            Style::default()
+                                .bg(Color::DarkGray)
+                                .add_modifier(Modifier::BOLD)
                         } else {
                             Style::default()
                         };
@@ -3835,9 +4096,11 @@ fn draw_modlist_editor_screen(f: &mut Frame, state: &AppState, area: Rect) {
                     .collect();
 
                 let list = List::new(items)
-                    .block(Block::default()
-                        .title(format!(" Modlists ({}) ", state.saved_modlists.len()))
-                        .borders(Borders::ALL))
+                    .block(
+                        Block::default()
+                            .title(format!(" Modlists ({}) ", state.saved_modlists.len()))
+                            .borders(Borders::ALL),
+                    )
                     .highlight_style(Style::default().add_modifier(Modifier::BOLD));
 
                 let mut list_state = ratatui::widgets::ListState::default();
@@ -3870,21 +4133,26 @@ fn draw_modlist_editor_screen(f: &mut Frame, state: &AppState, area: Rect) {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(3),  // Title
+                    Constraint::Length(3), // Title
                     Constraint::Min(5),    // Content
-                    Constraint::Length(3),  // Help
+                    Constraint::Length(3), // Help
                 ])
                 .split(area);
 
             // Title
-            let modlist_name = state.saved_modlists
+            let modlist_name = state
+                .saved_modlists
                 .iter()
                 .find(|ml| ml.id == state.active_modlist_id)
                 .map(|ml| ml.name.as_str())
                 .unwrap_or("Unknown");
 
             let title = Paragraph::new(format!("Editing: {}", modlist_name))
-                .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+                .style(
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                )
                 .alignment(Alignment::Center)
                 .block(Block::default().borders(Borders::ALL));
             f.render_widget(title, chunks[0]);
@@ -3915,22 +4183,28 @@ fn draw_modlist_editor_screen(f: &mut Frame, state: &AppState, area: Rect) {
                     .enumerate()
                     .map(|(i, entry)| {
                         let style = if i == state.selected_modlist_editor_index {
-                            Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD)
+                            Style::default()
+                                .bg(Color::DarkGray)
+                                .add_modifier(Modifier::BOLD)
                         } else {
                             Style::default()
                         };
                         let status = if entry.enabled { "[*]" } else { "[ ]" };
-                        let nexus_id = entry.nexus_mod_id
+                        let nexus_id = entry
+                            .nexus_mod_id
                             .map(|id| format!(" ({})", id))
                             .unwrap_or_default();
-                        ListItem::new(format!(" {} {}{}", status, entry.name, nexus_id)).style(style)
+                        ListItem::new(format!(" {} {}{}", status, entry.name, nexus_id))
+                            .style(style)
                     })
                     .collect();
 
                 let list = List::new(items)
-                    .block(Block::default()
-                        .title(format!(" Entries ({}) ", entries.len()))
-                        .borders(Borders::ALL))
+                    .block(
+                        Block::default()
+                            .title(format!(" Entries ({}) ", entries.len()))
+                            .borders(Borders::ALL),
+                    )
                     .highlight_style(Style::default().add_modifier(Modifier::BOLD));
 
                 let mut list_state = ratatui::widgets::ListState::default();
@@ -3941,30 +4215,62 @@ fn draw_modlist_editor_screen(f: &mut Frame, state: &AppState, area: Rect) {
             // Details panel (Advanced only)
             if !guided {
                 if let Some(entry) = entries.get(state.selected_modlist_editor_index) {
-                    let confidence = entry.match_confidence
+                    let confidence = entry
+                        .match_confidence
                         .map(|c| format!("{:.0}%", c * 100.0))
                         .unwrap_or_else(|| "N/A".to_string());
 
                     let details = vec![
-                        Line::from(Span::styled(&entry.name, Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan))),
+                        Line::from(Span::styled(
+                            &entry.name,
+                            Style::default()
+                                .add_modifier(Modifier::BOLD)
+                                .fg(Color::Cyan),
+                        )),
                         Line::from(""),
-                        Line::from(format!("Enabled:    {}", if entry.enabled { "Yes" } else { "No" })),
+                        Line::from(format!(
+                            "Enabled:    {}",
+                            if entry.enabled { "Yes" } else { "No" }
+                        )),
                         Line::from(format!("Position:   {}", entry.position)),
-                        Line::from(format!("Nexus ID:   {}", entry.nexus_mod_id.map(|id| id.to_string()).unwrap_or_else(|| "None".to_string()))),
-                        Line::from(format!("Plugin:     {}", entry.plugin_name.as_deref().unwrap_or("None"))),
+                        Line::from(format!(
+                            "Nexus ID:   {}",
+                            entry
+                                .nexus_mod_id
+                                .map(|id| id.to_string())
+                                .unwrap_or_else(|| "None".to_string())
+                        )),
+                        Line::from(format!(
+                            "Plugin:     {}",
+                            entry.plugin_name.as_deref().unwrap_or("None")
+                        )),
                         Line::from(format!("Confidence: {}", confidence)),
-                        Line::from(format!("Author:     {}", entry.author.as_deref().unwrap_or("Unknown"))),
-                        Line::from(format!("Version:    {}", entry.version.as_deref().unwrap_or("Unknown"))),
+                        Line::from(format!(
+                            "Author:     {}",
+                            entry.author.as_deref().unwrap_or("Unknown")
+                        )),
+                        Line::from(format!(
+                            "Version:    {}",
+                            entry.version.as_deref().unwrap_or("Unknown")
+                        )),
                     ];
 
                     let detail_widget = Paragraph::new(details)
-                        .block(Block::default().title(" Entry Details ").borders(Borders::ALL))
+                        .block(
+                            Block::default()
+                                .title(" Entry Details ")
+                                .borders(Borders::ALL),
+                        )
                         .wrap(Wrap { trim: true });
                     f.render_widget(detail_widget, content_chunks[1]);
                 } else {
                     let empty_details = Paragraph::new("Select an entry to view details")
                         .alignment(Alignment::Center)
-                        .block(Block::default().title(" Entry Details ").borders(Borders::ALL));
+                        .block(
+                            Block::default()
+                                .title(" Entry Details ")
+                                .borders(Borders::ALL),
+                        );
                     f.render_widget(empty_details, content_chunks[1]);
                 }
             }

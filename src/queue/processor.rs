@@ -8,7 +8,7 @@ use tokio::sync::Semaphore;
 use crate::db::Database;
 use crate::mods::{InstallResult, ModManager};
 use crate::nexus::NexusClient;
-use crate::queue::{QueueEntry, QueueStatus, QueueManager};
+use crate::queue::{QueueEntry, QueueManager, QueueStatus};
 
 /// Queue processor handles downloading and installing queued mods
 pub struct QueueProcessor {
@@ -45,7 +45,11 @@ impl QueueProcessor {
     pub async fn process_batch(&self, batch_id: &str, download_only: bool) -> Result<()> {
         let entries = self.queue_manager.get_batch(batch_id)?;
 
-        tracing::info!("Processing batch {} with {} entries", batch_id, entries.len());
+        tracing::info!(
+            "Processing batch {} with {} entries",
+            batch_id,
+            entries.len()
+        );
 
         // Filter entries that are ready to download.
         // NeedsReview entries are processable when the user decides to proceed.
@@ -93,9 +97,16 @@ impl QueueProcessor {
 
     /// Process a single queue entry
     async fn process_entry(&self, entry: QueueEntry, download_only: bool) -> Result<()> {
-        tracing::info!("Processing entry: {} (mod_id: {})", entry.mod_name, entry.nexus_mod_id);
+        tracing::info!(
+            "Processing entry: {} (mod_id: {})",
+            entry.mod_name,
+            entry.nexus_mod_id
+        );
 
-        let resolved_name = self.resolve_mod_name(&entry).await.unwrap_or_else(|| entry.mod_name.clone());
+        let resolved_name = self
+            .resolve_mod_name(&entry)
+            .await
+            .unwrap_or_else(|| entry.mod_name.clone());
         if resolved_name != entry.mod_name {
             let _ = self.queue_manager.update_name(entry.id, &resolved_name);
         }
@@ -127,7 +138,9 @@ impl QueueProcessor {
         // and upgrade metadata so they are not re-added as duplicates.
         let legacy_name = entry.nexus_mod_id.to_string();
         if let Some(mut legacy_mod) = self.queue_manager.db.get_mod(&self.game_id, &legacy_name)? {
-            if legacy_mod.nexus_mod_id.is_none() || legacy_mod.nexus_mod_id == Some(entry.nexus_mod_id) {
+            if legacy_mod.nexus_mod_id.is_none()
+                || legacy_mod.nexus_mod_id == Some(entry.nexus_mod_id)
+            {
                 let target_name_conflict = !legacy_mod.name.eq_ignore_ascii_case(&resolved_name)
                     && self
                         .queue_manager
@@ -152,7 +165,10 @@ impl QueueProcessor {
                     QueueStatus::Skipped,
                     Some("Already installed (legacy entry upgraded)".to_string()),
                 )?;
-                tracing::info!("Skipping {} (legacy install already present)", entry.mod_name);
+                tracing::info!(
+                    "Skipping {} (legacy install already present)",
+                    entry.mod_name
+                );
                 return Ok(());
             }
         }
@@ -177,9 +193,11 @@ impl QueueProcessor {
         };
 
         // Step 2: Get download link
-        self.queue_manager.update_status(entry.id, QueueStatus::Downloading, None)?;
+        self.queue_manager
+            .update_status(entry.id, QueueStatus::Downloading, None)?;
 
-        let download_links = match self.nexus_client
+        let download_links = match self
+            .nexus_client
             .get_download_link(&self.game_domain, entry.nexus_mod_id, file_id)
             .await
         {
@@ -197,7 +215,11 @@ impl QueueProcessor {
 
         if download_links.is_empty() {
             let err = anyhow::anyhow!("No download links available");
-            self.queue_manager.update_status(entry.id, QueueStatus::Failed, Some(err.to_string()))?;
+            self.queue_manager.update_status(
+                entry.id,
+                QueueStatus::Failed,
+                Some(err.to_string()),
+            )?;
             return Err(err);
         }
 
@@ -211,19 +233,18 @@ impl QueueProcessor {
         let entry_id = entry.id;
         let queue_manager = self.queue_manager.clone();
 
-        let result = NexusClient::download_file(
-            download_url,
-            &dest_path,
-            move |downloaded, total| {
-                let _ = queue_manager.update_progress(entry_id, downloaded as i64, Some(total as i64));
-            },
-        )
-        .await;
+        let result =
+            NexusClient::download_file(download_url, &dest_path, move |downloaded, total| {
+                let _ =
+                    queue_manager.update_progress(entry_id, downloaded as i64, Some(total as i64));
+            })
+            .await;
 
         match result {
             Ok(_) => {
                 tracing::info!("Downloaded {} successfully", entry.mod_name);
-                self.queue_manager.update_status(entry.id, QueueStatus::Downloaded, None)?;
+                self.queue_manager
+                    .update_status(entry.id, QueueStatus::Downloaded, None)?;
             }
             Err(e) => {
                 tracing::error!("Failed to download {}: {}", entry.mod_name, e);
@@ -238,7 +259,8 @@ impl QueueProcessor {
 
         // Step 4: Install if requested
         if !download_only && entry.auto_install {
-            self.queue_manager.update_status(entry.id, QueueStatus::Installing, None)?;
+            self.queue_manager
+                .update_status(entry.id, QueueStatus::Installing, None)?;
 
             let install_path = dest_path.to_string_lossy().to_string();
             match self
@@ -254,7 +276,8 @@ impl QueueProcessor {
                 .await
             {
                 Ok(InstallResult::Completed(installed)) => {
-                    self.queue_manager.update_status(entry.id, QueueStatus::Completed, None)?;
+                    self.queue_manager
+                        .update_status(entry.id, QueueStatus::Completed, None)?;
                     tracing::info!("Installed {} as {}", resolved_name, installed.name);
                 }
                 Ok(InstallResult::RequiresWizard(_)) => {
@@ -267,15 +290,24 @@ impl QueueProcessor {
                 Err(e) => {
                     let msg = e.to_string();
                     if msg.contains("already installed") {
-                        self.queue_manager.update_status(entry.id, QueueStatus::Skipped, Some(msg))?;
+                        self.queue_manager.update_status(
+                            entry.id,
+                            QueueStatus::Skipped,
+                            Some(msg),
+                        )?;
                     } else {
-                        self.queue_manager.update_status(entry.id, QueueStatus::Failed, Some(msg.clone()))?;
+                        self.queue_manager.update_status(
+                            entry.id,
+                            QueueStatus::Failed,
+                            Some(msg.clone()),
+                        )?;
                     }
                     return Err(e);
                 }
             }
         } else {
-            self.queue_manager.update_status(entry.id, QueueStatus::Completed, None)?;
+            self.queue_manager
+                .update_status(entry.id, QueueStatus::Completed, None)?;
             tracing::info!("Downloaded {} (install skipped)", entry.mod_name);
         }
 

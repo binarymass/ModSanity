@@ -216,7 +216,11 @@ impl InstallerValidator {
     }
 
     /// Validate a single option group
-    fn validate_group(group: &OptionGroup, step_idx: usize, group_idx: usize) -> Vec<ValidationIssue> {
+    fn validate_group(
+        group: &OptionGroup,
+        step_idx: usize,
+        group_idx: usize,
+    ) -> Vec<ValidationIssue> {
         let mut issues = Vec::new();
         let location = format!("step[{}].group[{}]", step_idx, group_idx);
 
@@ -231,7 +235,13 @@ impl InstallerValidator {
         }
 
         // Check group type
-        let valid_types = ["SelectExactlyOne", "SelectAtMostOne", "SelectAtLeastOne", "SelectAll", "SelectAny"];
+        let valid_types = [
+            "SelectExactlyOne",
+            "SelectAtMostOne",
+            "SelectAtLeastOne",
+            "SelectAll",
+            "SelectAny",
+        ];
         if !valid_types.contains(&group.group_type.as_str()) {
             issues.push(ValidationIssue {
                 severity: IssueSeverity::Error,
@@ -253,7 +263,9 @@ impl InstallerValidator {
 
         // Validate plugins
         for (plugin_idx, plugin) in group.plugins.plugins.iter().enumerate() {
-            issues.extend(Self::validate_plugin(plugin, step_idx, group_idx, plugin_idx));
+            issues.extend(Self::validate_plugin(
+                plugin, step_idx, group_idx, plugin_idx,
+            ));
         }
 
         issues
@@ -267,7 +279,10 @@ impl InstallerValidator {
         plugin_idx: usize,
     ) -> Vec<ValidationIssue> {
         let mut issues = Vec::new();
-        let location = format!("step[{}].group[{}].plugin[{}]", step_idx, group_idx, plugin_idx);
+        let location = format!(
+            "step[{}].group[{}].plugin[{}]",
+            step_idx, group_idx, plugin_idx
+        );
 
         // Check plugin name
         if plugin.name.is_empty() {
@@ -335,8 +350,14 @@ mod tests {
 
     #[test]
     fn test_comparison_operators() {
-        assert_eq!(ComparisonOperator::from_str("=="), Some(ComparisonOperator::Equal));
-        assert_eq!(ComparisonOperator::from_str(">="), Some(ComparisonOperator::GreaterOrEqual));
+        assert_eq!(
+            ComparisonOperator::from_str("=="),
+            Some(ComparisonOperator::Equal)
+        );
+        assert_eq!(
+            ComparisonOperator::from_str(">="),
+            Some(ComparisonOperator::GreaterOrEqual)
+        );
         assert_eq!(ComparisonOperator::from_str("invalid"), None);
 
         assert!(ComparisonOperator::Equal.compare(5, 5));
@@ -347,9 +368,30 @@ mod tests {
 
     #[test]
     fn test_version_parsing() {
-        assert_eq!(Version::parse("1.2.3"), Some(Version { major: 1, minor: 2, patch: 3 }));
-        assert_eq!(Version::parse("1.2"), Some(Version { major: 1, minor: 2, patch: 0 }));
-        assert_eq!(Version::parse("1"), Some(Version { major: 1, minor: 0, patch: 0 }));
+        assert_eq!(
+            Version::parse("1.2.3"),
+            Some(Version {
+                major: 1,
+                minor: 2,
+                patch: 3
+            })
+        );
+        assert_eq!(
+            Version::parse("1.2"),
+            Some(Version {
+                major: 1,
+                minor: 2,
+                patch: 0
+            })
+        );
+        assert_eq!(
+            Version::parse("1"),
+            Some(Version {
+                major: 1,
+                minor: 0,
+                patch: 0
+            })
+        );
         assert_eq!(Version::parse("invalid"), None);
         assert_eq!(Version::parse(""), None);
     }
@@ -368,9 +410,18 @@ mod tests {
 
     #[test]
     fn test_data_root_normalization() {
-        assert_eq!(DataRootDetector::normalize_path("Data/meshes/test.nif"), "meshes/test.nif");
-        assert_eq!(DataRootDetector::normalize_path("Data\\meshes\\test.nif"), "meshes\\test.nif");
-        assert_eq!(DataRootDetector::normalize_path("meshes/test.nif"), "meshes/test.nif");
+        assert_eq!(
+            DataRootDetector::normalize_path("Data/meshes/test.nif"),
+            "meshes/test.nif"
+        );
+        assert_eq!(
+            DataRootDetector::normalize_path("Data\\meshes\\test.nif"),
+            "meshes\\test.nif"
+        );
+        assert_eq!(
+            DataRootDetector::normalize_path("meshes/test.nif"),
+            "meshes/test.nif"
+        );
     }
 
     #[test]

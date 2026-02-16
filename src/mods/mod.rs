@@ -166,7 +166,8 @@ impl ModManager {
             .unwrap_or(parsed_name);
 
         // Resolve Nexus ID from explicit argument first, then filename fallback.
-        let resolved_nexus_mod_id = nexus_mod_id.or_else(|| Self::parse_nexus_ids(archive_name).map(|(mod_id, _)| mod_id));
+        let resolved_nexus_mod_id =
+            nexus_mod_id.or_else(|| Self::parse_nexus_ids(archive_name).map(|(mod_id, _)| mod_id));
 
         // Guard against duplicate installs of the same Nexus mod under different names.
         // This also upgrades legacy unresolved numeric-name installs (e.g. "165498")
@@ -174,11 +175,7 @@ impl ModManager {
         if let Some(mid) = resolved_nexus_mod_id {
             let existing = self.db.find_mods_by_nexus_ids(game_id, &[mid])?;
             if let Some(existing_mod) = existing.get(&mid) {
-                let is_numeric_name = existing_mod
-                    .name
-                    .trim()
-                    .chars()
-                    .all(|c| c.is_ascii_digit());
+                let is_numeric_name = existing_mod.name.trim().chars().all(|c| c.is_ascii_digit());
                 if is_numeric_name
                     && !existing_mod.name.eq_ignore_ascii_case(&name)
                     && self.db.get_mod(game_id, &name)?.is_none()
@@ -242,7 +239,11 @@ impl ModManager {
             .context("Failed to create staging directory")?;
 
         // Extract archive
-        tracing::info!("Extracting {} to {}", archive_path.display(), staging.display());
+        tracing::info!(
+            "Extracting {} to {}",
+            archive_path.display(),
+            staging.display()
+        );
         extract_archive(archive_path, &staging, progress_callback).await?;
 
         // Check for FOMOD installer (including nested structures)
@@ -271,7 +272,10 @@ impl ModManager {
                     }
                 }
                 Err(e) => {
-                    tracing::warn!("Failed to parse FOMOD installer: {}, falling back to simple install", e);
+                    tracing::warn!(
+                        "Failed to parse FOMOD installer: {}, falling back to simple install",
+                        e
+                    );
                     // Continue with normal installation
                 }
             }
@@ -404,10 +408,7 @@ impl ModManager {
         );
 
         // Execute installation
-        let executor = FomodExecutor::new(
-            context.staging_path.clone(),
-            target_path.clone(),
-        );
+        let executor = FomodExecutor::new(context.staging_path.clone(), target_path.clone());
 
         // TODO: Convert progress_callback to ExecutionProgress format
         let _result = executor.execute(&plan, None).await?;
@@ -554,7 +555,9 @@ impl ModManager {
         };
 
         // Get mod's install path
-        let _mod_record = self.db.get_mod(game_id, mod_name)?
+        let _mod_record = self
+            .db
+            .get_mod(game_id, mod_name)?
             .ok_or_else(|| anyhow::anyhow!("Mod '{}' not found", mod_name))?;
 
         let staging = self.staging_dir(game_id).await.join(mod_name);
@@ -656,7 +659,8 @@ impl ModManager {
         // Sort mods by category display order, then by current priority within category
         let mut sorted_mods = mods.clone();
         sorted_mods.sort_by_key(|m| {
-            let cat_order = m.category_id
+            let cat_order = m
+                .category_id
                 .and_then(|id| category_order.get(&id).copied())
                 .unwrap_or(999); // Uncategorized mods go last
             (cat_order, m.priority)
@@ -794,10 +798,20 @@ impl ModManager {
                                 rec.mod_id = mod_id;
                             }
                             if let Err(e) = self.db.insert_mod_files(mod_id, &inserted_files) {
-                                tracing::warn!("Failed to save file index for '{}': {}", scanned.name, e);
+                                tracing::warn!(
+                                    "Failed to save file index for '{}': {}",
+                                    scanned.name,
+                                    e
+                                );
                             }
-                            if let Err(e) = self.db.replace_mod_plugins(mod_id, game_id, &plugin_files) {
-                                tracing::warn!("Failed to index plugins for '{}': {}", scanned.name, e);
+                            if let Err(e) =
+                                self.db.replace_mod_plugins(mod_id, game_id, &plugin_files)
+                            {
+                                tracing::warn!(
+                                    "Failed to index plugins for '{}': {}",
+                                    scanned.name,
+                                    e
+                                );
                             }
                             stats.added += 1;
                             tracing::info!("Imported mod '{}' v{}", scanned.name, scanned.version);
@@ -827,19 +841,19 @@ impl ModManager {
                     scanned_files.sort();
 
                     let resolved_nexus_mod_id = scanned.nexus_mod_id.or(existing_mod.nexus_mod_id);
-                    let resolved_nexus_file_id = scanned.nexus_file_id.or(existing_mod.nexus_file_id);
+                    let resolved_nexus_file_id =
+                        scanned.nexus_file_id.or(existing_mod.nexus_file_id);
                     let resolved_description = scanned
                         .description
                         .clone()
                         .or(existing_mod.description.clone());
 
-                    let changed =
-                        existing_mod.version != scanned.version
-                            || existing_mod.install_path != mod_path.to_string_lossy()
-                            || existing_mod.nexus_mod_id != resolved_nexus_mod_id
-                            || existing_mod.nexus_file_id != resolved_nexus_file_id
-                            || existing_mod.description != resolved_description
-                            || existing_files != scanned_files;
+                    let changed = existing_mod.version != scanned.version
+                        || existing_mod.install_path != mod_path.to_string_lossy()
+                        || existing_mod.nexus_mod_id != resolved_nexus_mod_id
+                        || existing_mod.nexus_file_id != resolved_nexus_file_id
+                        || existing_mod.description != resolved_description
+                        || existing_files != scanned_files;
 
                     if changed {
                         existing_mod.version = scanned.version.clone();
@@ -857,23 +871,41 @@ impl ModManager {
                         }
 
                         if let Err(e) = self.db.delete_mod_files(mod_id) {
-                            tracing::warn!("Failed clearing old files for '{}': {}", existing_mod.name, e);
+                            tracing::warn!(
+                                "Failed clearing old files for '{}': {}",
+                                existing_mod.name,
+                                e
+                            );
                         }
                         let mut updated_files = file_records.clone();
                         for rec in &mut updated_files {
                             rec.mod_id = mod_id;
                         }
                         if let Err(e) = self.db.insert_mod_files(mod_id, &updated_files) {
-                            tracing::warn!("Failed indexing files for '{}': {}", existing_mod.name, e);
+                            tracing::warn!(
+                                "Failed indexing files for '{}': {}",
+                                existing_mod.name,
+                                e
+                            );
                         }
-                        if let Err(e) = self.db.replace_mod_plugins(mod_id, game_id, &plugin_files) {
-                            tracing::warn!("Failed indexing plugins for '{}': {}", existing_mod.name, e);
+                        if let Err(e) = self.db.replace_mod_plugins(mod_id, game_id, &plugin_files)
+                        {
+                            tracing::warn!(
+                                "Failed indexing plugins for '{}': {}",
+                                existing_mod.name,
+                                e
+                            );
                         }
                         stats.updated += 1;
                     } else {
                         // Keep plugin index in sync even when core mod record is unchanged.
-                        if let Err(e) = self.db.replace_mod_plugins(mod_id, game_id, &plugin_files) {
-                            tracing::warn!("Failed indexing plugins for '{}': {}", existing_mod.name, e);
+                        if let Err(e) = self.db.replace_mod_plugins(mod_id, game_id, &plugin_files)
+                        {
+                            tracing::warn!(
+                                "Failed indexing plugins for '{}': {}",
+                                existing_mod.name,
+                                e
+                            );
                         }
                         stats.unchanged += 1;
                     }
@@ -883,7 +915,10 @@ impl ModManager {
 
         tracing::info!(
             "Rescan complete: {} added, {} updated, {} unchanged, {} failed",
-            stats.added, stats.updated, stats.unchanged, stats.failed
+            stats.added,
+            stats.updated,
+            stats.unchanged,
+            stats.failed
         );
         Ok(stats)
     }
@@ -907,18 +942,17 @@ impl ModManager {
                 if let Some(caps) = re.captures(filename) {
                     let version = caps.get(1).map(|m| m.as_str()).unwrap_or("1.0.0");
                     let name = filename[..caps.get(0).unwrap().start()].to_string();
-                    let name = name
-                        .replace('-', " ")
-                        .replace('_', " ")
-                        .trim()
-                        .to_string();
+                    let name = name.replace('-', " ").replace('_', " ").trim().to_string();
                     return (name, version.to_string());
                 }
             }
         }
 
         // No version found
-        (filename.replace('-', " ").replace('_', " "), "1.0.0".to_string())
+        (
+            filename.replace('-', " ").replace('_', " "),
+            "1.0.0".to_string(),
+        )
     }
 
     /// Extract Nexus mod ID from filename
@@ -952,17 +986,30 @@ impl ModManager {
             for num in &numbers[..numbers.len() - 1] {
                 let digits = num.to_string().len();
                 if digits >= 3 && digits <= 7 {
-                    tracing::debug!("Parsed '{}' -> mod_id: {}, file_id: {}", filename, num, last_num);
+                    tracing::debug!(
+                        "Parsed '{}' -> mod_id: {}, file_id: {}",
+                        filename,
+                        num,
+                        last_num
+                    );
                     return Some((*num, last_num));
                 }
             }
         } else if last_digits >= 3 && last_digits <= 7 {
             // No timestamp - last number is probably the mod_id
-            tracing::debug!("Parsed '{}' (no timestamp) -> mod_id: {}", filename, last_num);
+            tracing::debug!(
+                "Parsed '{}' (no timestamp) -> mod_id: {}",
+                filename,
+                last_num
+            );
             return Some((last_num, 0));
         }
 
-        tracing::trace!("Rejecting '{}': no valid pattern in {:?}", filename, numbers);
+        tracing::trace!(
+            "Rejecting '{}': no valid pattern in {:?}",
+            filename,
+            numbers
+        );
         None
     }
 
@@ -975,7 +1022,11 @@ impl ModManager {
     }
 
     /// Update Nexus IDs for mods that don't have them by matching with archives directory
-    pub async fn update_missing_nexus_ids(&self, game_id: &str, archive_dir: Option<&str>) -> Result<usize> {
+    pub async fn update_missing_nexus_ids(
+        &self,
+        game_id: &str,
+        archive_dir: Option<&str>,
+    ) -> Result<usize> {
         let mods = self.list_mods(game_id).await?;
         let mut updated = 0;
 
@@ -1003,8 +1054,13 @@ impl ModManager {
                             // Extract the clean name (before the first numeric ID)
                             let clean_name = Self::parse_mod_name(stem).0;
                             let normalized = Self::normalize_name(&clean_name);
-                            tracing::debug!("Archive '{}' -> '{}' (IDs: {}, {})",
-                                stem, normalized, mod_id, file_id);
+                            tracing::debug!(
+                                "Archive '{}' -> '{}' (IDs: {}, {})",
+                                stem,
+                                normalized,
+                                mod_id,
+                                file_id
+                            );
                             archive_map.insert(normalized, (mod_id, file_id, clean_name));
                         }
                     }
@@ -1012,10 +1068,17 @@ impl ModManager {
             }
         }
 
-        tracing::info!("Scanned {} files, found {} archives with Nexus IDs", total_files, archive_map.len());
+        tracing::info!(
+            "Scanned {} files, found {} archives with Nexus IDs",
+            total_files,
+            archive_map.len()
+        );
 
         let total_mods = mods.len();
-        tracing::debug!("Attempting to match {} installed mods to archives", total_mods);
+        tracing::debug!(
+            "Attempting to match {} installed mods to archives",
+            total_mods
+        );
 
         // Match installed mods to archives
         let mut matched = 0;
@@ -1026,11 +1089,19 @@ impl ModManager {
                 let digits = existing_id.to_string().len();
                 // If it's 10 digits, it's probably a timestamp - overwrite it
                 if digits != 10 {
-                    tracing::debug!("Mod '{}' already has valid ID: {}", mod_info.name, existing_id);
+                    tracing::debug!(
+                        "Mod '{}' already has valid ID: {}",
+                        mod_info.name,
+                        existing_id
+                    );
                     skipped_with_valid_id += 1;
                     continue;
                 }
-                tracing::debug!("Mod '{}' has timestamp ID ({}), will overwrite", mod_info.name, existing_id);
+                tracing::debug!(
+                    "Mod '{}' has timestamp ID ({}), will overwrite",
+                    mod_info.name,
+                    existing_id
+                );
             }
 
             // Try to find matching archive
@@ -1060,7 +1131,10 @@ impl ModManager {
             tracing::info!("Successfully matched {} mod(s) to archives", matched);
         }
         if skipped_with_valid_id > 0 {
-            tracing::debug!("Skipped {} mods that already have valid IDs", skipped_with_valid_id);
+            tracing::debug!(
+                "Skipped {} mods that already have valid IDs",
+                skipped_with_valid_id
+            );
         }
         let without_matches = total_mods - matched - skipped_with_valid_id;
         if without_matches > 0 {
@@ -1079,10 +1153,7 @@ impl ModManager {
         // Get all installed mods for this game that have Nexus mod IDs
         let mods = self.db.get_mods_for_game(game_id)?;
 
-        let mod_ids: Vec<i64> = mods
-            .iter()
-            .filter_map(|m| m.nexus_mod_id)
-            .collect();
+        let mod_ids: Vec<i64> = mods.iter().filter_map(|m| m.nexus_mod_id).collect();
 
         if mod_ids.is_empty() {
             return Ok(Vec::new());
@@ -1092,7 +1163,7 @@ impl ModManager {
         let game_domain = match game_id {
             "skyrimse" => "skyrimspecialedition",
             "skyrimvr" => "skyrimspecialedition", // VR uses same domain
-            id => id, // Use game_id as fallback
+            id => id,                             // Use game_id as fallback
         };
 
         // Query for updates
@@ -1102,10 +1173,7 @@ impl ModManager {
             .context("Failed to check for mod updates")?;
 
         // Filter to only mods that actually have updates
-        let updates_available: Vec<_> = updates
-            .into_iter()
-            .filter(|u| u.has_update)
-            .collect();
+        let updates_available: Vec<_> = updates.into_iter().filter(|u| u.has_update).collect();
 
         Ok(updates_available)
     }
@@ -1117,7 +1185,11 @@ impl ModManager {
         game_id: &str,
         mod_id: i64,
         nexus_client: &crate::nexus::NexusClient,
-    ) -> Result<(Vec<crate::nexus::graphql::ModRequirement>, Vec<crate::nexus::graphql::ModRequirement>, usize)> {
+    ) -> Result<(
+        Vec<crate::nexus::graphql::ModRequirement>,
+        Vec<crate::nexus::graphql::ModRequirement>,
+        usize,
+    )> {
         // Get game domain
         let game_domain = match game_id {
             "skyrimse" => "skyrimspecialedition",
@@ -1238,8 +1310,16 @@ fn find_data_root(path: &Path) -> Result<PathBuf> {
 
             // Skip numbered folders (FOMOD components)
             if dir_name.len() >= 2
-                && dir_name.chars().nth(0).map(|c| c.is_ascii_digit()).unwrap_or(false)
-                && dir_name.chars().nth(1).map(|c| c.is_ascii_digit()).unwrap_or(false)
+                && dir_name
+                    .chars()
+                    .nth(0)
+                    .map(|c| c.is_ascii_digit())
+                    .unwrap_or(false)
+                && dir_name
+                    .chars()
+                    .nth(1)
+                    .map(|c| c.is_ascii_digit())
+                    .unwrap_or(false)
             {
                 continue;
             }
@@ -1280,7 +1360,10 @@ fn collect_files(root: &Path) -> Result<Vec<String>> {
 fn plugin_filenames_from_mod_files(files: &[ModFileRecord]) -> Vec<String> {
     let mut plugins = std::collections::BTreeSet::new();
     for file in files {
-        if let Some(name) = Path::new(&file.relative_path).file_name().and_then(|n| n.to_str()) {
+        if let Some(name) = Path::new(&file.relative_path)
+            .file_name()
+            .and_then(|n| n.to_str())
+        {
             let lower = name.to_lowercase();
             if lower.ends_with(".esp") || lower.ends_with(".esm") || lower.ends_with(".esl") {
                 plugins.insert(name.to_string());
@@ -1395,7 +1478,10 @@ fn extract_short_description(mod_path: &Path) -> Option<String> {
             continue;
         }
         let name = entry.file_name().to_string_lossy().to_lowercase();
-        if !(name.starts_with("readme") || name.starts_with("description") || name.ends_with(".txt")) {
+        if !(name.starts_with("readme")
+            || name.starts_with("description")
+            || name.ends_with(".txt"))
+        {
             continue;
         }
         let text = std::fs::read_to_string(entry.path()).ok()?;

@@ -1,9 +1,9 @@
 //! NexusMods matching system with scoring
 
-use anyhow::Result;
 use crate::db::Database;
 use crate::import::modlist_parser::PluginEntry;
-use crate::nexus::{NexusClient, ModSearchParams, ModSearchResult, SortBy};
+use crate::nexus::{ModSearchParams, ModSearchResult, NexusClient, SortBy};
+use anyhow::Result;
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
@@ -21,7 +21,11 @@ impl ModMatcher {
         Self::with_catalog(game_id, nexus_client, None)
     }
 
-    pub fn with_catalog(game_id: String, nexus_client: NexusClient, db: Option<Arc<Database>>) -> Self {
+    pub fn with_catalog(
+        game_id: String,
+        nexus_client: NexusClient,
+        db: Option<Arc<Database>>,
+    ) -> Self {
         // Normalize game identifier for DB queries and Nexus domain.
         let (normalized_game_id, game_domain) = match game_id.as_str() {
             "skyrimse" | "skyrimspecialedition" => ("skyrimse", "skyrimspecialedition"),
@@ -72,7 +76,9 @@ impl ModMatcher {
 
                     if let Some(nexus_id) = hit.nexus_mod_id {
                         // Prefer catalog metadata when available for better user-facing details.
-                        if let Some(catalog_hit) = db.get_catalog_mod_by_id(&self.game_domain, nexus_id)? {
+                        if let Some(catalog_hit) =
+                            db.get_catalog_mod_by_id(&self.game_domain, nexus_id)?
+                        {
                             let result = catalog_hit.to_search_result();
                             return Ok(MatchResult {
                                 plugin: plugin.clone(),
@@ -97,7 +103,10 @@ impl ModMatcher {
                                 mod_id: nexus_id,
                                 name: hit.mod_name.clone(),
                                 author: String::new(),
-                                summary: format!("Matched by installed plugin: {}", hit.plugin_name),
+                                summary: format!(
+                                    "Matched by installed plugin: {}",
+                                    hit.plugin_name
+                                ),
                                 downloads: 0,
                                 version: hit.mod_version.clone(),
                             }),
@@ -142,7 +151,11 @@ impl ModMatcher {
             // Try exact name match
             match db.find_mod_by_name(&self.game_id, &mod_name) {
                 Ok(Some(installed_mod)) => {
-                    tracing::debug!("Found installed mod for '{}': {}", mod_name, installed_mod.name);
+                    tracing::debug!(
+                        "Found installed mod for '{}': {}",
+                        mod_name,
+                        installed_mod.name
+                    );
                     // Return as high-confidence match from installed library
                     if let Some(nexus_id) = installed_mod.nexus_mod_id {
                         return Ok(MatchResult {
@@ -185,8 +198,12 @@ impl ModMatcher {
                     }
 
                     if let Some(installed) = best_installed {
-                        tracing::debug!("Found fuzzy installed match for '{}': {} (score: {:.2})",
-                            mod_name, installed.name, best_score);
+                        tracing::debug!(
+                            "Found fuzzy installed match for '{}': {} (score: {:.2})",
+                            mod_name,
+                            installed.name,
+                            best_score
+                        );
 
                         if let Some(nexus_id) = installed.nexus_mod_id {
                             let confidence = if best_score >= 0.8 {
@@ -212,7 +229,11 @@ impl ModMatcher {
                         }
                     }
 
-                    tracing::debug!("No fuzzy installed matches for '{}' (best score: {:.2})", mod_name, best_score);
+                    tracing::debug!(
+                        "No fuzzy installed matches for '{}' (best score: {:.2})",
+                        mod_name,
+                        best_score
+                    );
                 }
                 Err(e) => {
                     tracing::warn!("Error getting installed mods for '{}': {}", mod_name, e);
@@ -223,31 +244,39 @@ impl ModMatcher {
         // Stage 0b: Search local catalog (fast, no API call)
         if mod_id_hint.is_none() {
             if let Some(ref db) = self.db {
-            match db.search_catalog(&self.game_domain, &mod_name, 10) {
-                Ok(catalog_results) if !catalog_results.is_empty() => {
-                    let search_results: Vec<ModSearchResult> = catalog_results
-                        .iter()
-                        .map(|r| r.to_search_result())
-                        .collect();
-                    let result = self.score_results(
-                        plugin.clone(),
-                        mod_name.clone(),
-                        search_results,
-                        mod_id_hint,
-                    );
-                    if result.confidence.score() >= 0.4 {
-                        tracing::debug!("Catalog hit for '{}': score {:.2}", mod_name, result.confidence.score());
-                        return Ok(result);
+                match db.search_catalog(&self.game_domain, &mod_name, 10) {
+                    Ok(catalog_results) if !catalog_results.is_empty() => {
+                        let search_results: Vec<ModSearchResult> = catalog_results
+                            .iter()
+                            .map(|r| r.to_search_result())
+                            .collect();
+                        let result = self.score_results(
+                            plugin.clone(),
+                            mod_name.clone(),
+                            search_results,
+                            mod_id_hint,
+                        );
+                        if result.confidence.score() >= 0.4 {
+                            tracing::debug!(
+                                "Catalog hit for '{}': score {:.2}",
+                                mod_name,
+                                result.confidence.score()
+                            );
+                            return Ok(result);
+                        }
+                        tracing::debug!(
+                            "Catalog match for '{}' too low ({:.2}), falling back to API",
+                            mod_name,
+                            result.confidence.score()
+                        );
                     }
-                    tracing::debug!("Catalog match for '{}' too low ({:.2}), falling back to API", mod_name, result.confidence.score());
+                    Ok(_) => {
+                        tracing::debug!("No catalog results for '{}'", mod_name);
+                    }
+                    Err(e) => {
+                        tracing::warn!("Catalog search failed for '{}': {}", mod_name, e);
+                    }
                 }
-                Ok(_) => {
-                    tracing::debug!("No catalog results for '{}'", mod_name);
-                }
-                Err(e) => {
-                    tracing::warn!("Catalog search failed for '{}': {}", mod_name, e);
-                }
-            }
             }
         }
 
@@ -360,7 +389,8 @@ impl ModMatcher {
                 MatchConfidence::Low(*best_score)
             };
 
-            let alternatives = scored.iter()
+            let alternatives = scored
+                .iter()
                 .skip(1)
                 .map(|(r, s)| MatchAlternative {
                     mod_id: r.mod_id,
@@ -392,7 +422,6 @@ impl ModMatcher {
     }
 }
 
-
 /// Normalize a mod name for comparison
 /// Handles punctuation, spacing, edition suffixes, etc.
 fn normalize_name(name: &str) -> String {
@@ -400,6 +429,7 @@ fn normalize_name(name: &str) -> String {
 
     // Normalize punctuation to spaces
     normalized = normalized
+        .replace('+', " ")
         .replace('-', " ")
         .replace('_', " ")
         .replace('\'', "")
@@ -423,7 +453,9 @@ fn normalize_name(name: &str) -> String {
 
 /// Extract significant words for matching (remove articles, common words)
 fn extract_significant_words(name: &str) -> HashSet<String> {
-    let stop_words = ["the", "a", "an", "and", "or", "for", "of", "in", "on", "at", "to", "by"];
+    let stop_words = [
+        "the", "a", "an", "and", "or", "for", "of", "in", "on", "at", "to", "by",
+    ];
 
     normalize_name(name)
         .split_whitespace()
@@ -458,7 +490,11 @@ fn levenshtein_distance(s1: &str, s2: &str) -> usize {
 
     for i in 1..=len1 {
         for j in 1..=len2 {
-            let cost = if s1_chars[i - 1] == s2_chars[j - 1] { 0 } else { 1 };
+            let cost = if s1_chars[i - 1] == s2_chars[j - 1] {
+                0
+            } else {
+                1
+            };
             matrix[i][j] = (matrix[i - 1][j] + 1)
                 .min(matrix[i][j - 1] + 1)
                 .min(matrix[i - 1][j - 1] + cost);
@@ -589,7 +625,10 @@ fn calculate_match_score(query: &str, result: &ModSearchResult, mod_id_hint: Opt
 }
 
 fn extract_plugin_filename(raw: &str) -> Option<String> {
-    let trimmed = raw.trim();
+    let trimmed = raw
+        .trim()
+        .trim_start_matches(|c| c == '+' || c == '-' || c == '*')
+        .trim();
     if trimmed.is_empty() {
         return None;
     }

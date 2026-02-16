@@ -267,7 +267,12 @@ impl DownloadQueueEntry {
             match_confidence: row.get(16).ok(),
             import_batch_id: row.get(17).ok(),
             selected_file_id: row.get(18).ok(),
-            auto_install: row.get::<_, Option<i32>>(19).ok().flatten().map(|v| v != 0).unwrap_or(true),
+            auto_install: row
+                .get::<_, Option<i32>>(19)
+                .ok()
+                .flatten()
+                .map(|v| v != 0)
+                .unwrap_or(true),
         })
     }
 }

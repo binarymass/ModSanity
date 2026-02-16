@@ -26,17 +26,14 @@ impl<'a> FomodChoiceManager<'a> {
     ) -> Result<()> {
         let plan_json = serde_json::to_string(plan).context("Failed to serialize plan")?;
 
-        self.db.save_fomod_choice(mod_id, profile_id, &plan.config_hash, &plan_json)?;
+        self.db
+            .save_fomod_choice(mod_id, profile_id, &plan.config_hash, &plan_json)?;
 
         Ok(())
     }
 
     /// Load a previously saved FOMOD choice
-    pub fn load_choice(
-        &self,
-        mod_id: i64,
-        profile_id: Option<i64>,
-    ) -> Result<Option<InstallPlan>> {
+    pub fn load_choice(&self, mod_id: i64, profile_id: Option<i64>) -> Result<Option<InstallPlan>> {
         let choice = self.db.get_fomod_choice(mod_id, profile_id)?;
 
         match choice {
@@ -147,7 +144,9 @@ mod tests {
     #[test]
     fn test_hash_stability() {
         // Create a simple config
-        use crate::mods::fomod::{InstallStep, InstallSteps, ModuleConfig, OptionGroup, OptionGroups, Plugin, PluginList};
+        use crate::mods::fomod::{
+            InstallStep, InstallSteps, ModuleConfig, OptionGroup, OptionGroups, Plugin, PluginList,
+        };
 
         let config = ModuleConfig {
             module_name: "Test Mod".to_string(),
@@ -157,36 +156,36 @@ mod tests {
             install_steps: InstallSteps {
                 order: String::new(),
                 steps: vec![InstallStep {
-                name: "Step 1".to_string(),
-                groups: OptionGroups {
-                    order: String::new(),
-                    groups: vec![OptionGroup {
-                        name: "Group 1".to_string(),
-                        group_type: "SelectExactlyOne".to_string(),
-                        plugins: PluginList {
-                            order: String::new(),
-                            plugins: vec![
-                                Plugin {
-                                    name: "Option A".to_string(),
-                                    description: String::new(),
-                                    image: None,
-                                    files: None,
-                                    condition_flags: None,
-                                    type_descriptor: None,
-                                },
-                                Plugin {
-                                    name: "Option B".to_string(),
-                                    description: String::new(),
-                                    image: None,
-                                    files: None,
-                                    condition_flags: None,
-                                    type_descriptor: None,
-                                },
-                            ],
-                        },
-                    }],
-                },
-            }],
+                    name: "Step 1".to_string(),
+                    groups: OptionGroups {
+                        order: String::new(),
+                        groups: vec![OptionGroup {
+                            name: "Group 1".to_string(),
+                            group_type: "SelectExactlyOne".to_string(),
+                            plugins: PluginList {
+                                order: String::new(),
+                                plugins: vec![
+                                    Plugin {
+                                        name: "Option A".to_string(),
+                                        description: String::new(),
+                                        image: None,
+                                        files: None,
+                                        condition_flags: None,
+                                        type_descriptor: None,
+                                    },
+                                    Plugin {
+                                        name: "Option B".to_string(),
+                                        description: String::new(),
+                                        image: None,
+                                        files: None,
+                                        condition_flags: None,
+                                        type_descriptor: None,
+                                    },
+                                ],
+                            },
+                        }],
+                    },
+                }],
             },
             conditional_installs: None,
         };

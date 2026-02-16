@@ -19,9 +19,7 @@ pub fn draw_fomod_wizard(f: &mut Frame, state: &AppState, area: Rect) {
         Some(ws) => ws,
         None => {
             // No wizard state - show error
-            let block = Block::default()
-                .title("FOMOD Wizard")
-                .borders(Borders::ALL);
+            let block = Block::default().title("FOMOD Wizard").borders(Borders::ALL);
             let text = Paragraph::new("No FOMOD wizard state available")
                 .block(block)
                 .alignment(Alignment::Center);
@@ -254,8 +252,12 @@ fn draw_option_groups(f: &mut Frame, wizard_state: &FomodWizardState, area: Rect
         .collect();
 
     // Validation indicator
-    let group_validation =
-        validation::validate_group(&group, &selections, wizard_state.current_step, wizard_state.current_group);
+    let group_validation = validation::validate_group(
+        &group,
+        &selections,
+        wizard_state.current_step,
+        wizard_state.current_group,
+    );
     let validation_indicator = if group_validation.is_ok() {
         "✓"
     } else {
@@ -524,8 +526,7 @@ fn draw_confirm(f: &mut Frame, _wizard_state: &FomodWizardState, area: Rect) {
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    let text = Paragraph::new("Confirm installation...")
-        .alignment(Alignment::Center);
+    let text = Paragraph::new("Confirm installation...").alignment(Alignment::Center);
 
     f.render_widget(text, inner);
 }

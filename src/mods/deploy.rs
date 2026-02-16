@@ -62,17 +62,13 @@ pub async fn deploy_mods(
     for mod_record in &enabled_mods {
         let mod_path = PathBuf::from(&mod_record.install_path);
         if !mod_path.exists() {
-            stats.errors.push(format!(
-                "Mod directory not found: {}",
-                mod_record.name
-            ));
+            stats
+                .errors
+                .push(format!("Mod directory not found: {}", mod_record.name));
             continue;
         }
 
-        for entry in WalkDir::new(&mod_path)
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
+        for entry in WalkDir::new(&mod_path).into_iter().filter_map(|e| e.ok()) {
             if !entry.file_type().is_file() {
                 continue;
             }
@@ -343,14 +339,13 @@ pub async fn purge_deployment(
     }
 
     // Canonicalize staging directory for accurate comparison
-    let canonical_staging = staging_dir.canonicalize().unwrap_or_else(|_| staging_dir.to_path_buf());
+    let canonical_staging = staging_dir
+        .canonicalize()
+        .unwrap_or_else(|_| staging_dir.to_path_buf());
 
     let mut removed = 0;
 
-    for entry in WalkDir::new(data_path)
-        .into_iter()
-        .filter_map(|e| e.ok())
-    {
+    for entry in WalkDir::new(data_path).into_iter().filter_map(|e| e.ok()) {
         let path = entry.path();
 
         // Only remove symlinks using symlink_metadata to avoid following the link
@@ -443,10 +438,14 @@ mod tests {
     fn canonicalize_relative_path_reuses_first_seen_filename_casing() {
         let mut dir_case_map = HashMap::new();
 
-        let first =
-            canonicalize_relative_path(Path::new("Meshes/Bodyslides/Body_0.NIF"), &mut dir_case_map);
-        let second =
-            canonicalize_relative_path(Path::new("meshes/bodyslides/body_0.nif"), &mut dir_case_map);
+        let first = canonicalize_relative_path(
+            Path::new("Meshes/Bodyslides/Body_0.NIF"),
+            &mut dir_case_map,
+        );
+        let second = canonicalize_relative_path(
+            Path::new("meshes/bodyslides/body_0.nif"),
+            &mut dir_case_map,
+        );
 
         assert_eq!(first, PathBuf::from("Meshes/Bodyslides/Body_0.NIF"));
         assert_eq!(second, PathBuf::from("Meshes/Bodyslides/Body_0.NIF"));

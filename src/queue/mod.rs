@@ -9,9 +9,9 @@ pub mod state;
 pub use processor::QueueProcessor;
 pub use state::{QueueState, QueueStatus};
 
+use crate::db::{Database, DownloadQueueEntry, MatchAlternativeRecord, QueueBatchSummary};
 use anyhow::Result;
 use std::sync::Arc;
-use crate::db::{Database, DownloadQueueEntry, MatchAlternativeRecord, QueueBatchSummary};
 use uuid::Uuid;
 
 /// Queue manager for CRUD operations on download queue
@@ -57,8 +57,10 @@ impl QueueManager {
 
         // Insert alternatives if any
         if !entry.alternatives.is_empty() {
-            let alt_records: Vec<_> = entry.alternatives.iter().map(|alt| {
-                MatchAlternativeRecord {
+            let alt_records: Vec<_> = entry
+                .alternatives
+                .iter()
+                .map(|alt| MatchAlternativeRecord {
                     id: None,
                     download_id: id,
                     nexus_mod_id: alt.mod_id,
@@ -67,8 +69,8 @@ impl QueueManager {
                     summary: Some(alt.summary.clone()),
                     downloads_count: Some(alt.downloads),
                     thumbnail_url: alt.thumbnail_url.clone(),
-                }
-            }).collect();
+                })
+                .collect();
 
             self.db.insert_match_alternatives(id, &alt_records)?;
         }
@@ -83,16 +85,17 @@ impl QueueManager {
         let mut entries = Vec::new();
         for db_entry in db_entries {
             let alternatives_records = self.db.get_match_alternatives(db_entry.id.unwrap())?;
-            let alternatives = alternatives_records.into_iter().map(|alt| {
-                QueueAlternative {
+            let alternatives = alternatives_records
+                .into_iter()
+                .map(|alt| QueueAlternative {
                     mod_id: alt.nexus_mod_id,
                     name: alt.mod_name,
                     summary: alt.summary.unwrap_or_default(),
                     downloads: alt.downloads_count.unwrap_or(0),
                     score: alt.match_score,
                     thumbnail_url: alt.thumbnail_url,
-                }
-            }).collect();
+                })
+                .collect();
 
             entries.push(QueueEntry {
                 id: db_entry.id.unwrap(),
@@ -120,13 +123,25 @@ impl QueueManager {
     }
 
     /// Update entry status
-    pub fn update_status(&self, entry_id: i64, status: QueueStatus, error: Option<String>) -> Result<()> {
-        self.db.update_download_status(entry_id, &status.to_string(), error.as_deref())
+    pub fn update_status(
+        &self,
+        entry_id: i64,
+        status: QueueStatus,
+        error: Option<String>,
+    ) -> Result<()> {
+        self.db
+            .update_download_status(entry_id, &status.to_string(), error.as_deref())
     }
 
     /// Update download progress
-    pub fn update_progress(&self, entry_id: i64, downloaded: i64, total: Option<i64>) -> Result<()> {
-        self.db.update_download_progress(entry_id, downloaded, total)
+    pub fn update_progress(
+        &self,
+        entry_id: i64,
+        downloaded: i64,
+        total: Option<i64>,
+    ) -> Result<()> {
+        self.db
+            .update_download_progress(entry_id, downloaded, total)
     }
 
     /// Update queue entry display name.

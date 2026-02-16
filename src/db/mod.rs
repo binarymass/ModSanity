@@ -144,24 +144,22 @@ impl Database {
         )?;
 
         // Check if parent_id column exists in categories, if not add it
-        let has_parent_column: bool = conn
-            .query_row(
-                "SELECT COUNT(*) FROM pragma_table_info('categories') WHERE name='parent_id'",
-                [],
-                |row| row.get(0),
-            )?;
+        let has_parent_column: bool = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('categories') WHERE name='parent_id'",
+            [],
+            |row| row.get(0),
+        )?;
 
         if !has_parent_column {
             conn.execute("ALTER TABLE categories ADD COLUMN parent_id INTEGER", [])?;
         }
 
         // Check if category_id column exists, if not add it
-        let has_category_column: bool = conn
-            .query_row(
-                "SELECT COUNT(*) FROM pragma_table_info('mods') WHERE name='category_id'",
-                [],
-                |row| row.get(0),
-            )?;
+        let has_category_column: bool = conn.query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('mods') WHERE name='category_id'",
+            [],
+            |row| row.get(0),
+        )?;
 
         if !has_category_column {
             conn.execute("ALTER TABLE mods ADD COLUMN category_id INTEGER", [])?;
@@ -252,7 +250,10 @@ impl Database {
 
             if !has_column {
                 conn.execute(
-                    &format!("ALTER TABLE downloads ADD COLUMN {} {}", column_name, column_type),
+                    &format!(
+                        "ALTER TABLE downloads ADD COLUMN {} {}",
+                        column_name, column_type
+                    ),
                     [],
                 )?;
                 tracing::info!("Added column '{}' to downloads table", column_name);
@@ -336,9 +337,8 @@ impl Database {
     /// Get all mods for a game
     pub fn get_mods_for_game(&self, game_id: &str) -> Result<Vec<ModRecord>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT * FROM mods WHERE game_id = ?1 ORDER BY priority ASC, name ASC",
-        )?;
+        let mut stmt =
+            conn.prepare("SELECT * FROM mods WHERE game_id = ?1 ORDER BY priority ASC, name ASC")?;
 
         let mods = stmt
             .query_map(params![game_id], |row| ModRecord::from_row(row))?
@@ -387,11 +387,9 @@ impl Database {
     /// Get a mod by ID
     pub fn get_mod_by_id(&self, mod_id: i64) -> Result<Option<ModRecord>> {
         let conn = self.conn.lock().unwrap();
-        conn.query_row(
-            "SELECT * FROM mods WHERE id = ?1",
-            params![mod_id],
-            |row| ModRecord::from_row(row),
-        )
+        conn.query_row("SELECT * FROM mods WHERE id = ?1", params![mod_id], |row| {
+            ModRecord::from_row(row)
+        })
         .optional()
         .map_err(Into::into)
     }
@@ -696,7 +694,11 @@ impl Database {
     }
 
     /// Get mods for a game filtered by category
-    pub fn get_mods_by_category(&self, game_id: &str, category_id: Option<i64>) -> Result<Vec<ModRecord>> {
+    pub fn get_mods_by_category(
+        &self,
+        game_id: &str,
+        category_id: Option<i64>,
+    ) -> Result<Vec<ModRecord>> {
         let conn = self.conn.lock().unwrap();
 
         let query = match category_id {
@@ -754,7 +756,10 @@ impl Database {
             return Ok(());
         }
 
-        tracing::info!("Migrating {} existing categories to new structure", category_count);
+        tracing::info!(
+            "Migrating {} existing categories to new structure",
+            category_count
+        );
 
         // Create temporary table to store mod->category mappings
         conn.execute_batch(
@@ -795,7 +800,10 @@ impl Database {
             ("Texture Mods", "Texture Mods"),
             // Subcategories that exist in new schema
             ("Overhauls", "Overhauls"),
-            ("Mission and Content Correction", "Mission and Content Correction"),
+            (
+                "Mission and Content Correction",
+                "Mission and Content Correction",
+            ),
             ("Difficulty/Level List Mods", "Difficulty/Level List Mods"),
             ("Race Mods", "Race Mods"),
             ("Perk Mods", "Perk Mods"),
@@ -845,11 +853,10 @@ impl Database {
         }
 
         // Also save any categories that don't have a mapping (will become uncategorized)
-        let saved_mods: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM temp_mod_categories",
-            [],
-            |row| row.get(0),
-        )?;
+        let saved_mods: i64 =
+            conn.query_row("SELECT COUNT(*) FROM temp_mod_categories", [], |row| {
+                row.get(0)
+            })?;
 
         tracing::info!("Saved {} mod category associations", saved_mods);
 
@@ -920,17 +927,72 @@ impl Database {
     pub fn init_default_categories(&self) -> Result<()> {
         // 11 Parent categories (name, description, order, color)
         let parent_categories = vec![
-            ("Bug Fixes", "Critical bug fixes and unofficial patches (e.g. USSEP)", 0, "#FF5555"),
-            ("Structure and UI Mods", "Overhauls, UI improvements, frameworks, and system mods", 1, "#55FF55"),
-            ("Missions/Quests", "New quests, questlines, and mission content", 2, "#FFFF55"),
-            ("Environmental Mods", "Meshes, weather, foliage, and sound mods", 3, "#55FFFF"),
-            ("Buildings", "Architecture, settlements, and structure mods", 4, "#AAFF55"),
-            ("Items", "Weapons, armor, equipment, and item additions", 5, "#55AAFF"),
-            ("Gameplay", "Gameplay mechanics, AI, balance, and system changes", 6, "#AA55FF"),
-            ("NPCs", "NPC additions, overhauls, and follower mods", 7, "#FFAAAA"),
-            ("Appearance Mods", "Character appearance, faces, hair, bodies, and cosmetics", 8, "#AAFFAA"),
-            ("Texture Mods", "Texture overhauls, retextures, and visual improvements", 9, "#AAAAFF"),
-            ("Patches", "Compatibility patches and load order fixes", 10, "#AAAAAA"),
+            (
+                "Bug Fixes",
+                "Critical bug fixes and unofficial patches (e.g. USSEP)",
+                0,
+                "#FF5555",
+            ),
+            (
+                "Structure and UI Mods",
+                "Overhauls, UI improvements, frameworks, and system mods",
+                1,
+                "#55FF55",
+            ),
+            (
+                "Missions/Quests",
+                "New quests, questlines, and mission content",
+                2,
+                "#FFFF55",
+            ),
+            (
+                "Environmental Mods",
+                "Meshes, weather, foliage, and sound mods",
+                3,
+                "#55FFFF",
+            ),
+            (
+                "Buildings",
+                "Architecture, settlements, and structure mods",
+                4,
+                "#AAFF55",
+            ),
+            (
+                "Items",
+                "Weapons, armor, equipment, and item additions",
+                5,
+                "#55AAFF",
+            ),
+            (
+                "Gameplay",
+                "Gameplay mechanics, AI, balance, and system changes",
+                6,
+                "#AA55FF",
+            ),
+            (
+                "NPCs",
+                "NPC additions, overhauls, and follower mods",
+                7,
+                "#FFAAAA",
+            ),
+            (
+                "Appearance Mods",
+                "Character appearance, faces, hair, bodies, and cosmetics",
+                8,
+                "#AAFFAA",
+            ),
+            (
+                "Texture Mods",
+                "Texture overhauls, retextures, and visual improvements",
+                9,
+                "#AAAAFF",
+            ),
+            (
+                "Patches",
+                "Compatibility patches and load order fixes",
+                10,
+                "#AAAAAA",
+            ),
         ];
 
         for (name, description, display_order, color) in parent_categories {
@@ -947,13 +1009,19 @@ impl Database {
         }
 
         // Look up parent IDs for subcategories
-        let structure_ui_id = self.get_category_by_name("Structure and UI Mods")?.and_then(|c| c.id);
-        let environmental_id = self.get_category_by_name("Environmental Mods")?.and_then(|c| c.id);
+        let structure_ui_id = self
+            .get_category_by_name("Structure and UI Mods")?
+            .and_then(|c| c.id);
+        let environmental_id = self
+            .get_category_by_name("Environmental Mods")?
+            .and_then(|c| c.id);
         let buildings_id = self.get_category_by_name("Buildings")?.and_then(|c| c.id);
         let items_id = self.get_category_by_name("Items")?.and_then(|c| c.id);
         let gameplay_id = self.get_category_by_name("Gameplay")?.and_then(|c| c.id);
         let npcs_id = self.get_category_by_name("NPCs")?.and_then(|c| c.id);
-        let appearance_id = self.get_category_by_name("Appearance Mods")?.and_then(|c| c.id);
+        let appearance_id = self
+            .get_category_by_name("Appearance Mods")?
+            .and_then(|c| c.id);
         let patches_id = self.get_category_by_name("Patches")?.and_then(|c| c.id);
 
         // Subcategories (name, description, order, color, parent_id)
@@ -962,82 +1030,286 @@ impl Database {
         // 2. Structure and UI Mods subcategories (A-G)
         if let Some(pid) = structure_ui_id {
             subcategories.extend_from_slice(&[
-                ("Overhauls", "Major gameplay and system overhauls (e.g. Campfire, Frostfall)", 100, "#5555FF", Some(pid)),
-                ("Mission and Content Correction", "Mission and content correction (e.g. Cutting Room Floor)", 101, "#5577FF", Some(pid)),
-                ("Difficulty/Level List Mods", "Difficulty and level list mods", 102, "#5599FF", Some(pid)),
-                ("Race Mods", "Race additions and modifications", 103, "#55BBFF", Some(pid)),
-                ("Perk Mods", "Perk system modifications", 104, "#55DDFF", Some(pid)),
-                ("UI Mods", "User interface enhancements", 105, "#55FFFF", Some(pid)),
-                ("Cheat Mods", "Cheat and convenience mods", 106, "#77FFFF", Some(pid)),
+                (
+                    "Overhauls",
+                    "Major gameplay and system overhauls (e.g. Campfire, Frostfall)",
+                    100,
+                    "#5555FF",
+                    Some(pid),
+                ),
+                (
+                    "Mission and Content Correction",
+                    "Mission and content correction (e.g. Cutting Room Floor)",
+                    101,
+                    "#5577FF",
+                    Some(pid),
+                ),
+                (
+                    "Difficulty/Level List Mods",
+                    "Difficulty and level list mods",
+                    102,
+                    "#5599FF",
+                    Some(pid),
+                ),
+                (
+                    "Race Mods",
+                    "Race additions and modifications",
+                    103,
+                    "#55BBFF",
+                    Some(pid),
+                ),
+                (
+                    "Perk Mods",
+                    "Perk system modifications",
+                    104,
+                    "#55DDFF",
+                    Some(pid),
+                ),
+                (
+                    "UI Mods",
+                    "User interface enhancements",
+                    105,
+                    "#55FFFF",
+                    Some(pid),
+                ),
+                (
+                    "Cheat Mods",
+                    "Cheat and convenience mods",
+                    106,
+                    "#77FFFF",
+                    Some(pid),
+                ),
             ]);
         }
 
         // 4. Environmental Mods subcategories (A-D)
         if let Some(pid) = environmental_id {
             subcategories.extend_from_slice(&[
-                ("Global Mesh Mods", "Global mesh improvements (e.g. SMIM)", 200, "#FF55FF", Some(pid)),
-                ("Weather/Lighting", "Weather and lighting overhauls", 201, "#FFAA55", Some(pid)),
-                ("Foliage Mods", "Trees, grass, and plant mods", 202, "#77FF77", Some(pid)),
-                ("Sound Mods", "Audio, music, and sound effects", 203, "#FFAAFF", Some(pid)),
+                (
+                    "Global Mesh Mods",
+                    "Global mesh improvements (e.g. SMIM)",
+                    200,
+                    "#FF55FF",
+                    Some(pid),
+                ),
+                (
+                    "Weather/Lighting",
+                    "Weather and lighting overhauls",
+                    201,
+                    "#FFAA55",
+                    Some(pid),
+                ),
+                (
+                    "Foliage Mods",
+                    "Trees, grass, and plant mods",
+                    202,
+                    "#77FF77",
+                    Some(pid),
+                ),
+                (
+                    "Sound Mods",
+                    "Audio, music, and sound effects",
+                    203,
+                    "#FFAAFF",
+                    Some(pid),
+                ),
             ]);
         }
 
         // 5. Buildings subcategories (A-D)
         if let Some(pid) = buildings_id {
             subcategories.extend_from_slice(&[
-                ("Distributed Content", "Distributed or worldwide content (e.g. Dolmen Ruins, Oblivion Gates)", 300, "#AAFF55", Some(pid)),
-                ("Settlements", "Settlement additions and expansions", 301, "#BBFF66", Some(pid)),
-                ("Individual Buildings", "Individual building additions", 302, "#CCFF77", Some(pid)),
-                ("Building Interiors", "Building interior modifications", 303, "#DDFF88", Some(pid)),
+                (
+                    "Distributed Content",
+                    "Distributed or worldwide content (e.g. Dolmen Ruins, Oblivion Gates)",
+                    300,
+                    "#AAFF55",
+                    Some(pid),
+                ),
+                (
+                    "Settlements",
+                    "Settlement additions and expansions",
+                    301,
+                    "#BBFF66",
+                    Some(pid),
+                ),
+                (
+                    "Individual Buildings",
+                    "Individual building additions",
+                    302,
+                    "#CCFF77",
+                    Some(pid),
+                ),
+                (
+                    "Building Interiors",
+                    "Building interior modifications",
+                    303,
+                    "#DDFF88",
+                    Some(pid),
+                ),
             ]);
         }
 
         // 6. Items subcategories (A-B)
         if let Some(pid) = items_id {
             subcategories.extend_from_slice(&[
-                ("Item Packs", "Collections and packs of items", 400, "#5599FF", Some(pid)),
-                ("Individual Items", "Single item additions", 401, "#66AAFF", Some(pid)),
+                (
+                    "Item Packs",
+                    "Collections and packs of items",
+                    400,
+                    "#5599FF",
+                    Some(pid),
+                ),
+                (
+                    "Individual Items",
+                    "Single item additions",
+                    401,
+                    "#66AAFF",
+                    Some(pid),
+                ),
             ]);
         }
 
         // 7. Gameplay subcategories (A-E)
         if let Some(pid) = gameplay_id {
             subcategories.extend_from_slice(&[
-                ("AI Mods", "AI improvements (e.g. Immersive Citizens)", 500, "#AA55FF", Some(pid)),
-                ("Robust Gameplay Changes", "Major gameplay changes (e.g. Marriage All, Alternate Start)", 501, "#BB66FF", Some(pid)),
-                ("Expanded Armor", "Expanded armor and equipment (e.g. Magic Books, Pouches)", 502, "#CC77FF", Some(pid)),
-                ("Crafting Mods", "Crafting system modifications", 503, "#DD88FF", Some(pid)),
-                ("Other Gameplay", "Other gameplay mods (e.g. Rich Merchants, Faster Greatswords)", 504, "#EE99FF", Some(pid)),
+                (
+                    "AI Mods",
+                    "AI improvements (e.g. Immersive Citizens)",
+                    500,
+                    "#AA55FF",
+                    Some(pid),
+                ),
+                (
+                    "Robust Gameplay Changes",
+                    "Major gameplay changes (e.g. Marriage All, Alternate Start)",
+                    501,
+                    "#BB66FF",
+                    Some(pid),
+                ),
+                (
+                    "Expanded Armor",
+                    "Expanded armor and equipment (e.g. Magic Books, Pouches)",
+                    502,
+                    "#CC77FF",
+                    Some(pid),
+                ),
+                (
+                    "Crafting Mods",
+                    "Crafting system modifications",
+                    503,
+                    "#DD88FF",
+                    Some(pid),
+                ),
+                (
+                    "Other Gameplay",
+                    "Other gameplay mods (e.g. Rich Merchants, Faster Greatswords)",
+                    504,
+                    "#EE99FF",
+                    Some(pid),
+                ),
             ]);
         }
 
         // 8. NPCs subcategories (A-C)
         if let Some(pid) = npcs_id {
             subcategories.extend_from_slice(&[
-                ("NPC Overhauls", "NPC overhauls (e.g. Diverse Dragons)", 600, "#FFAAAA", Some(pid)),
-                ("Populated Series", "Populated series mods", 601, "#FFBBBB", Some(pid)),
-                ("Other NPC Additions", "Other NPC additions", 602, "#FFCCCC", Some(pid)),
+                (
+                    "NPC Overhauls",
+                    "NPC overhauls (e.g. Diverse Dragons)",
+                    600,
+                    "#FFAAAA",
+                    Some(pid),
+                ),
+                (
+                    "Populated Series",
+                    "Populated series mods",
+                    601,
+                    "#FFBBBB",
+                    Some(pid),
+                ),
+                (
+                    "Other NPC Additions",
+                    "Other NPC additions",
+                    602,
+                    "#FFCCCC",
+                    Some(pid),
+                ),
             ]);
         }
 
         // 9. Appearance Mods subcategories (A-F)
         if let Some(pid) = appearance_id {
             subcategories.extend_from_slice(&[
-                ("Hairdo Mods", "Hairstyle additions", 700, "#AAFFAA", Some(pid)),
-                ("Adorable Females", "Female beauty and attractiveness mods", 701, "#99FF99", Some(pid)),
-                ("Face Mods", "Facial appearance modifications", 702, "#BBFFBB", Some(pid)),
-                ("Body Mesh Mods", "Body mesh and texture mods (e.g. Seraphim, CBBE, Dimon99)", 703, "#CCFFCC", Some(pid)),
-                ("Natural Eyes", "Eye textures and modifications", 704, "#DDFFDD", Some(pid)),
-                ("Other Appearance", "Other appearance modifications", 705, "#EEFFEE", Some(pid)),
+                (
+                    "Hairdo Mods",
+                    "Hairstyle additions",
+                    700,
+                    "#AAFFAA",
+                    Some(pid),
+                ),
+                (
+                    "Adorable Females",
+                    "Female beauty and attractiveness mods",
+                    701,
+                    "#99FF99",
+                    Some(pid),
+                ),
+                (
+                    "Face Mods",
+                    "Facial appearance modifications",
+                    702,
+                    "#BBFFBB",
+                    Some(pid),
+                ),
+                (
+                    "Body Mesh Mods",
+                    "Body mesh and texture mods (e.g. Seraphim, CBBE, Dimon99)",
+                    703,
+                    "#CCFFCC",
+                    Some(pid),
+                ),
+                (
+                    "Natural Eyes",
+                    "Eye textures and modifications",
+                    704,
+                    "#DDFFDD",
+                    Some(pid),
+                ),
+                (
+                    "Other Appearance",
+                    "Other appearance modifications",
+                    705,
+                    "#EEFFEE",
+                    Some(pid),
+                ),
             ]);
         }
 
         // 11. Patches subcategories (A-C)
         if let Some(pid) = patches_id {
             subcategories.extend_from_slice(&[
-                ("Compatibility Patches", "Patches for earlier mods (e.g. Apocalypse-Ordinator Compatibility Patch)", 800, "#AAAAAA", Some(pid)),
-                ("Content Patches", "Patches that alter content", 801, "#BBBBBB", Some(pid)),
-                ("Performance/Disable Patches", "Patches that disable content or improve performance", 802, "#CCCCCC", Some(pid)),
+                (
+                    "Compatibility Patches",
+                    "Patches for earlier mods (e.g. Apocalypse-Ordinator Compatibility Patch)",
+                    800,
+                    "#AAAAAA",
+                    Some(pid),
+                ),
+                (
+                    "Content Patches",
+                    "Patches that alter content",
+                    801,
+                    "#BBBBBB",
+                    Some(pid),
+                ),
+                (
+                    "Performance/Disable Patches",
+                    "Patches that disable content or improve performance",
+                    802,
+                    "#CCCCCC",
+                    Some(pid),
+                ),
             ]);
         }
 
@@ -1120,10 +1392,7 @@ impl Database {
     }
 
     /// Get all FOMOD choices for a profile
-    pub fn get_profile_fomod_choices(
-        &self,
-        profile_id: i64,
-    ) -> Result<Vec<(i64, String, String)>> {
+    pub fn get_profile_fomod_choices(&self, profile_id: i64) -> Result<Vec<(i64, String, String)>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             r#"
@@ -1346,7 +1615,12 @@ impl Database {
     }
 
     /// Update download status
-    pub fn update_download_status(&self, download_id: i64, status: &str, error: Option<&str>) -> Result<()> {
+    pub fn update_download_status(
+        &self,
+        download_id: i64,
+        status: &str,
+        error: Option<&str>,
+    ) -> Result<()> {
         let conn = self.conn.lock().unwrap();
 
         if status == "downloading" {
@@ -1370,7 +1644,12 @@ impl Database {
     }
 
     /// Update download progress
-    pub fn update_download_progress(&self, download_id: i64, downloaded: i64, size: Option<i64>) -> Result<()> {
+    pub fn update_download_progress(
+        &self,
+        download_id: i64,
+        downloaded: i64,
+        size: Option<i64>,
+    ) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         if let Some(total_size) = size {
             conn.execute(
@@ -1397,7 +1676,11 @@ impl Database {
     }
 
     /// Insert match alternatives for a download
-    pub fn insert_match_alternatives(&self, download_id: i64, alternatives: &[MatchAlternativeRecord]) -> Result<()> {
+    pub fn insert_match_alternatives(
+        &self,
+        download_id: i64,
+        alternatives: &[MatchAlternativeRecord],
+    ) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             r#"
@@ -1430,7 +1713,9 @@ impl Database {
         )?;
 
         let alternatives = stmt
-            .query_map(params![download_id], |row| MatchAlternativeRecord::from_row(row))?
+            .query_map(params![download_id], |row| {
+                MatchAlternativeRecord::from_row(row)
+            })?
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(alternatives)
@@ -1446,7 +1731,10 @@ impl Database {
     /// Clear all downloads for a batch
     pub fn clear_batch(&self, batch_id: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
-        conn.execute("DELETE FROM downloads WHERE import_batch_id = ?1", params![batch_id])?;
+        conn.execute(
+            "DELETE FROM downloads WHERE import_batch_id = ?1",
+            params![batch_id],
+        )?;
         Ok(())
     }
 
@@ -1520,12 +1808,14 @@ impl Database {
     pub fn get_sync_state(&self, game_domain: &str) -> Result<CatalogSyncState> {
         let conn = self.conn.lock().unwrap();
 
-        match conn.query_row(
-            "SELECT * FROM catalog_sync_state WHERE game_domain = ?1",
-            params![game_domain],
-            |row| CatalogSyncState::from_row(row),
-        )
-        .optional()? {
+        match conn
+            .query_row(
+                "SELECT * FROM catalog_sync_state WHERE game_domain = ?1",
+                params![game_domain],
+                |row| CatalogSyncState::from_row(row),
+            )
+            .optional()?
+        {
             Some(state) => Ok(state),
             None => {
                 // Initialize new state (API pagination starts at 1)
@@ -1603,7 +1893,11 @@ impl Database {
     }
 
     /// Upsert a page of catalog mods (insert or update)
-    pub fn upsert_catalog_page(&self, game_domain: &str, mods: &[NexusCatalogRecord]) -> Result<(i64, i64)> {
+    pub fn upsert_catalog_page(
+        &self,
+        game_domain: &str,
+        mods: &[NexusCatalogRecord],
+    ) -> Result<(i64, i64)> {
         let conn = self.conn.lock().unwrap();
         let mut inserted = 0i64;
         let mut updated = 0i64;
@@ -1612,15 +1906,14 @@ impl Database {
 
         for mod_record in mods {
             // Check if exists
-            let exists: bool = tx
-                .query_row(
-                    "SELECT COUNT(*) FROM nexus_catalog WHERE game_domain = ?1 AND mod_id = ?2",
-                    params![game_domain, mod_record.mod_id],
-                    |row| {
-                        let count: i64 = row.get(0)?;
-                        Ok(count > 0)
-                    },
-                )?;
+            let exists: bool = tx.query_row(
+                "SELECT COUNT(*) FROM nexus_catalog WHERE game_domain = ?1 AND mod_id = ?2",
+                params![game_domain, mod_record.mod_id],
+                |row| {
+                    let count: i64 = row.get(0)?;
+                    Ok(count > 0)
+                },
+            )?;
 
             if exists {
                 tx.execute(
@@ -1679,18 +1972,25 @@ impl Database {
 
     /// Search the local catalog for mods matching a query string
     /// Searches across name, summary, and description fields with token-based matching
-    pub fn search_catalog(&self, game_domain: &str, query: &str, limit: i32) -> Result<Vec<NexusCatalogRecord>> {
+    pub fn search_catalog(
+        &self,
+        game_domain: &str,
+        query: &str,
+        limit: i32,
+    ) -> Result<Vec<NexusCatalogRecord>> {
         let conn = self.conn.lock().unwrap();
 
         // Normalize query: remove punctuation, split into tokens
         let query_normalized = query
             .to_lowercase()
+            .replace('+', " ")
             .replace('-', " ")
             .replace('_', " ")
             .replace(':', " ");
 
         let tokens: Vec<&str> = query_normalized
             .split_whitespace()
+            .map(|t| t.trim_matches(|c: char| !c.is_ascii_alphanumeric()))
             .filter(|t| t.len() >= 2) // Ignore single characters
             .collect();
 
@@ -1734,7 +2034,7 @@ impl Database {
             "ELSE 0 \
              END as relevance \
              FROM nexus_catalog \
-             WHERE game_domain = ?1 AND ("
+             WHERE game_domain = ?1 AND (",
         );
 
         // Build WHERE clause: match any token in name, summary, or description
@@ -1744,7 +2044,9 @@ impl Database {
                 "(LOWER(name) LIKE '%' || ?{} || '%' OR \
                   LOWER(summary) LIKE '%' || ?{} || '%' OR \
                   LOWER(description) LIKE '%' || ?{} || '%')",
-                i + 3, i + 3, i + 3
+                i + 3,
+                i + 3,
+                i + 3
             ));
         }
         sql.push_str(&conditions.join(" OR "));
@@ -1769,13 +2071,10 @@ impl Database {
         }
         params_vec.push(Box::new(limit));
 
-        let param_refs: Vec<&dyn rusqlite::types::ToSql> = params_vec.iter()
-            .map(|p| p.as_ref())
-            .collect();
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params_vec.iter().map(|p| p.as_ref()).collect();
 
-        let rows = stmt.query_map(&param_refs[..], |row| {
-            NexusCatalogRecord::from_row(row)
-        })?;
+        let rows = stmt.query_map(&param_refs[..], |row| NexusCatalogRecord::from_row(row))?;
 
         let mut results = Vec::new();
         for row in rows {
@@ -1808,7 +2107,11 @@ impl Database {
     // ========== Library Check Operations ==========
 
     /// Batch lookup of installed mods by nexus_mod_id, chunked to avoid SQL limits
-    pub fn find_mods_by_nexus_ids(&self, game_id: &str, nexus_ids: &[i64]) -> Result<std::collections::HashMap<i64, ModRecord>> {
+    pub fn find_mods_by_nexus_ids(
+        &self,
+        game_id: &str,
+        nexus_ids: &[i64],
+    ) -> Result<std::collections::HashMap<i64, ModRecord>> {
         use std::collections::HashMap;
 
         let conn = self.conn.lock().unwrap();
@@ -1816,7 +2119,9 @@ impl Database {
 
         // Process in chunks of 500 to stay within SQLite variable limits
         for chunk in nexus_ids.chunks(500) {
-            let placeholders: Vec<String> = chunk.iter().enumerate()
+            let placeholders: Vec<String> = chunk
+                .iter()
+                .enumerate()
                 .map(|(i, _)| format!("?{}", i + 2))
                 .collect();
             let query = format!(
@@ -1833,9 +2138,8 @@ impl Database {
                 params_vec.push(Box::new(*id));
             }
 
-            let param_refs: Vec<&dyn rusqlite::types::ToSql> = params_vec.iter()
-                .map(|p| p.as_ref())
-                .collect();
+            let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+                params_vec.iter().map(|p| p.as_ref()).collect();
 
             let rows = stmt.query_map(param_refs.as_slice(), |row| ModRecord::from_row(row))?;
 
@@ -1925,7 +2229,10 @@ impl Database {
         )?;
         for row in rows {
             let (mod_id, game_id, relative_path) = row?;
-            if let Some(name) = Path::new(&relative_path).file_name().and_then(|n| n.to_str()) {
+            if let Some(name) = Path::new(&relative_path)
+                .file_name()
+                .and_then(|n| n.to_str())
+            {
                 let lower = name.to_lowercase();
                 if lower.ends_with(".esp") || lower.ends_with(".esm") || lower.ends_with(".esl") {
                     insert_stmt.execute(params![mod_id, game_id, name, lower])?;
@@ -2010,7 +2317,13 @@ impl Database {
     }
 
     /// Create a new modlist
-    pub fn create_modlist(&self, game_id: &str, name: &str, description: Option<&str>, source_file: Option<&str>) -> Result<i64> {
+    pub fn create_modlist(
+        &self,
+        game_id: &str,
+        name: &str,
+        description: Option<&str>,
+        source_file: Option<&str>,
+    ) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             r#"
@@ -2023,7 +2336,11 @@ impl Database {
     }
 
     /// Add modlist entries in a batch (transaction-wrapped)
-    pub fn add_modlist_entries_batch(&self, modlist_id: i64, entries: &[ModlistEntryRecord]) -> Result<()> {
+    pub fn add_modlist_entries_batch(
+        &self,
+        modlist_id: i64,
+        entries: &[ModlistEntryRecord],
+    ) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         let tx = conn.unchecked_transaction()?;
 
@@ -2082,7 +2399,10 @@ impl Database {
                  WHERE id = ?3",
                 params![description, source_file, id],
             )?;
-            tx.execute("DELETE FROM modlist_entries WHERE modlist_id = ?1", params![id])?;
+            tx.execute(
+                "DELETE FROM modlist_entries WHERE modlist_id = ?1",
+                params![id],
+            )?;
             id
         } else {
             tx.execute(
@@ -2124,9 +2444,8 @@ impl Database {
     /// Get all modlists for a game
     pub fn get_modlists_for_game(&self, game_id: &str) -> Result<Vec<ModlistRecord>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT * FROM modlists WHERE game_id = ?1 ORDER BY updated_at DESC",
-        )?;
+        let mut stmt =
+            conn.prepare("SELECT * FROM modlists WHERE game_id = ?1 ORDER BY updated_at DESC")?;
 
         let lists = stmt
             .query_map(params![game_id], |row| ModlistRecord::from_row(row))?
@@ -2138,9 +2457,8 @@ impl Database {
     /// Get entries for a modlist
     pub fn get_modlist_entries(&self, modlist_id: i64) -> Result<Vec<ModlistEntryRecord>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT * FROM modlist_entries WHERE modlist_id = ?1 ORDER BY position ASC",
-        )?;
+        let mut stmt = conn
+            .prepare("SELECT * FROM modlist_entries WHERE modlist_id = ?1 ORDER BY position ASC")?;
 
         let entries = stmt
             .query_map(params![modlist_id], |row| ModlistEntryRecord::from_row(row))?
@@ -2184,7 +2502,10 @@ impl Database {
     pub fn delete_modlist(&self, modlist_id: i64) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         // Manually delete entries first since SQLite CASCADE requires foreign_keys pragma
-        conn.execute("DELETE FROM modlist_entries WHERE modlist_id = ?1", params![modlist_id])?;
+        conn.execute(
+            "DELETE FROM modlist_entries WHERE modlist_id = ?1",
+            params![modlist_id],
+        )?;
         conn.execute("DELETE FROM modlists WHERE id = ?1", params![modlist_id])?;
         Ok(())
     }
@@ -2192,7 +2513,10 @@ impl Database {
     /// Delete a single modlist entry
     pub fn delete_modlist_entry(&self, entry_id: i64) -> Result<()> {
         let conn = self.conn.lock().unwrap();
-        conn.execute("DELETE FROM modlist_entries WHERE id = ?1", params![entry_id])?;
+        conn.execute(
+            "DELETE FROM modlist_entries WHERE id = ?1",
+            params![entry_id],
+        )?;
         Ok(())
     }
 
@@ -2207,7 +2531,12 @@ impl Database {
     }
 
     /// List catalog mods with pagination (ordered by updated_time DESC)
-    pub fn list_catalog_mods(&self, game_domain: &str, offset: i64, limit: i64) -> Result<Vec<NexusCatalogRecord>> {
+    pub fn list_catalog_mods(
+        &self,
+        game_domain: &str,
+        offset: i64,
+        limit: i64,
+    ) -> Result<Vec<NexusCatalogRecord>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT game_domain, mod_id, name, summary, description, author, updated_time, synced_at \
@@ -2217,7 +2546,9 @@ impl Database {
         )?;
 
         let mods = stmt
-            .query_map(params![game_domain, limit, offset], |row| NexusCatalogRecord::from_row(row))?
+            .query_map(params![game_domain, limit, offset], |row| {
+                NexusCatalogRecord::from_row(row)
+            })?
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(mods)

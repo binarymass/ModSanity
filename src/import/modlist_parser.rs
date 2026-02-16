@@ -50,11 +50,27 @@ impl ModlistParser {
     /// Parse a single line from modlist.txt
     fn parse_line(&self, line: &str) -> Result<Option<PluginEntry>> {
         // Handle MO2 format variations:
-        // 1. `*[index] [form_id] [plugin_name]` - Standard format
-        // 2. `[plugin_name]` - Simple format (no index)
-        // The '*' indicates enabled, space for disabled
+        // 1. `+Mod Name` / `-Mod Name` from modlist.txt (mod entries)
+        // 2. `*[index] [form_id] [plugin_name]` (plugin-like entries)
+        // 3. `[plugin_name]` simple fallback (no index)
 
         let trimmed = line.trim();
+
+        // MO2 modlist.txt format: leading '+' for enabled, '-' for disabled.
+        if let Some(first) = trimmed.chars().next() {
+            if first == '+' || first == '-' {
+                let name = trimmed[1..].trim();
+                if name.is_empty() || is_separator_entry(name) {
+                    return Ok(None);
+                }
+
+                return Ok(Some(PluginEntry {
+                    plugin_name: name.to_string(),
+                    load_order: 0,
+                    enabled: first == '+',
+                }));
+            }
+        }
 
         // Check if enabled (starts with *)
         let enabled = trimmed.starts_with('*');
@@ -87,6 +103,10 @@ impl ModlistParser {
             (0, name)
         };
 
+        if plugin_name.is_empty() || is_separator_entry(&plugin_name) {
+            return Ok(None);
+        }
+
         Ok(Some(PluginEntry {
             plugin_name,
             load_order,
@@ -115,7 +135,8 @@ impl PluginEntry {
     /// Extract mod name from plugin filename
     /// Removes extension, version patterns, and cleans up formatting
     pub fn extract_mod_name(&self) -> String {
-        let raw_name = parse_nexus_archive_metadata(&self.plugin_name).0;
+        let raw_name =
+            parse_nexus_archive_metadata(strip_leading_state_marker(&self.plugin_name)).0;
         let name = raw_name.as_str();
 
         // Remove extension
@@ -183,6 +204,24 @@ fn parse_nexus_archive_metadata(name: &str) -> (String, Option<i64>) {
     (base, None)
 }
 
+fn strip_leading_state_marker(name: &str) -> &str {
+    let trimmed = name.trim();
+    if let Some(rest) = trimmed.strip_prefix('+') {
+        return rest.trim_start();
+    }
+    if let Some(rest) = trimmed.strip_prefix('-') {
+        return rest.trim_start();
+    }
+    if let Some(rest) = trimmed.strip_prefix('*') {
+        return rest.trim_start();
+    }
+    trimmed
+}
+
+fn is_separator_entry(name: &str) -> bool {
+    name.trim_end().to_ascii_lowercase().ends_with("_separator")
+}
+
 /// Expand common mod name abbreviations
 fn expand_abbreviations(name: &str) -> String {
     let expansions = [
@@ -231,16 +270,36 @@ mod tests {
         let parser = ModlistParser::new();
 
         // Test enabled plugin
-        let entry = parser.parse_line("*  1 FE 002 SkyUI_SE.esp").unwrap().unwrap();
+        let entry = parser
+            .parse_line("*  1 FE 002 SkyUI_SE.esp")
+            .unwrap()
+            .unwrap();
         assert_eq!(entry.plugin_name, "SkyUI_SE.esp");
         assert_eq!(entry.load_order, 1);
         assert!(entry.enabled);
 
         // Test disabled plugin
-        let entry = parser.parse_line("  2 Unofficial Skyrim Patch.esp").unwrap().unwrap();
+        let entry = parser
+            .parse_line("  2 Unofficial Skyrim Patch.esp")
+            .unwrap()
+            .unwrap();
         assert_eq!(entry.plugin_name, "Patch.esp");
         assert_eq!(entry.load_order, 2);
         assert!(!entry.enabled);
+
+        // Test MO2 modlist format
+        let entry = parser.parse_line("+SkyUI").unwrap().unwrap();
+        assert_eq!(entry.plugin_name, "SkyUI");
+        assert_eq!(entry.load_order, 0);
+        assert!(entry.enabled);
+
+        let entry = parser.parse_line("-Lux Test").unwrap().unwrap();
+        assert_eq!(entry.plugin_name, "Lux Test");
+        assert_eq!(entry.load_order, 0);
+        assert!(!entry.enabled);
+
+        // Ignore MO2 separators
+        assert!(parser.parse_line("-Fixes_separator").unwrap().is_none());
     }
 
     #[test]
@@ -257,7 +316,10 @@ mod tests {
             load_order: 2,
             enabled: true,
         };
-        assert_eq!(entry.extract_mod_name(), "Static Mesh Improvement Mod SE Merged All");
+        assert_eq!(
+            entry.extract_mod_name(),
+            "Static Mesh Improvement Mod SE Merged All"
+        );
     }
 
     #[test]
@@ -268,7 +330,10 @@ mod tests {
             enabled: true,
         };
         assert_eq!(entry.extract_nexus_mod_id(), Some(272));
-        assert_eq!(entry.extract_mod_name(), "Alternate Start Live Another Life");
+        assert_eq!(
+            entry.extract_mod_name(),
+            "Alternate Start Live Another Life"
+        );
     }
 
     #[test]
@@ -280,5 +345,22 @@ mod tests {
         };
         assert_eq!(entry.extract_nexus_mod_id(), Some(65625));
         assert!(entry.extract_mod_name().starts_with("Elden Rim"));
+    }
+
+    #[test]
+    fn test_extract_mod_name_strips_leading_markers() {
+        let entry = PluginEntry {
+            plugin_name: "+Soul Cairn Paper Map for FWMF".to_string(),
+            load_order: 0,
+            enabled: true,
+        };
+        assert_eq!(entry.extract_mod_name(), "Soul Cairn Paper Map for FWMF");
+
+        let entry = PluginEntry {
+            plugin_name: "-Flat World Map Framework".to_string(),
+            load_order: 0,
+            enabled: false,
+        };
+        assert_eq!(entry.extract_mod_name(), "Flat World Map Framework");
     }
 }

@@ -256,7 +256,10 @@ impl GameDetector {
         // Also scan common GOG install locations.
         for game_type in GameType::all() {
             if let Some(game) = Self::detect_gog_game(*game_type) {
-                if !games.iter().any(|g| g.id == game.id && g.install_path == game.install_path) {
+                if !games
+                    .iter()
+                    .any(|g| g.id == game.id && g.install_path == game.install_path)
+                {
                     games.push(game);
                 }
             }
@@ -393,7 +396,9 @@ impl GameDetector {
         let mut game = Game::new(game_type, install_path).with_platform(GamePlatform::Steam);
 
         // Check for Proton prefix
-        let compatdata = steamapps.join("compatdata").join(game_type.steam_app_id().to_string());
+        let compatdata = steamapps
+            .join("compatdata")
+            .join(game_type.steam_app_id().to_string());
         if compatdata.exists() {
             game = game.with_proton_prefix(compatdata);
         }
@@ -409,7 +414,11 @@ impl GameDetector {
             home.join(format!("GOG Games/{}", title)),
             home.join(format!("Games/GOG Games/{}", title)),
             home.join(format!("Games/{}", title)),
-            home.join(format!(".local/share/Steam/steamapps/compatdata/{}/pfx/drive_c/GOG Games/{}", game_type.steam_app_id(), title)),
+            home.join(format!(
+                ".local/share/Steam/steamapps/compatdata/{}/pfx/drive_c/GOG Games/{}",
+                game_type.steam_app_id(),
+                title
+            )),
         ];
 
         // Known extra aliases observed in the wild.
@@ -434,7 +443,8 @@ impl GameDetector {
                 continue;
             }
 
-            let mut game = Game::new(game_type, install_path.clone()).with_platform(GamePlatform::Gog);
+            let mut game =
+                Game::new(game_type, install_path.clone()).with_platform(GamePlatform::Gog);
             if let Some(prefix) = Self::infer_prefix_from_install_path(&install_path) {
                 game = game.with_proton_prefix(prefix);
             }

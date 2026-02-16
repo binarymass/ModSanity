@@ -44,7 +44,10 @@ pub fn get_conflicts_grouped(db: &Database, game_id: &str) -> Result<Vec<ModConf
     // Convert to ModConflict
     let mut result = Vec::new();
     for ((mod1, mod2), conflicts) in grouped {
-        let winner = conflicts.first().map(|c| c.winner().to_string()).unwrap_or_default();
+        let winner = conflicts
+            .first()
+            .map(|c| c.winner().to_string())
+            .unwrap_or_default();
         let files = conflicts.into_iter().map(|c| c.path).collect();
 
         result.push(ModConflict {
@@ -143,10 +146,7 @@ pub fn check_fomod_conflicts(
                     path: operation.destination.clone(),
                     existing_mod: Some(existing_mod.clone()),
                     severity,
-                    description: format!(
-                        "File already installed by '{}'",
-                        existing_mod
-                    ),
+                    description: format!("File already installed by '{}'", existing_mod),
                 });
             }
         }
@@ -154,4 +154,3 @@ pub fn check_fomod_conflicts(
 
     Ok(conflicts)
 }
-

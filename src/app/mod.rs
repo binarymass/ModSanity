@@ -7,7 +7,9 @@ pub use state::{AppState, ConfirmAction, ConfirmDialog, InputMode, Screen, UiMod
 
 use crate::config::{Config, DeploymentMethod, ExternalTool, ToolRuntimeMode};
 use crate::db::Database;
-use crate::games::{detect_proton_runtimes, Game, GameDetector, GamePlatform, GameType, ProtonRuntime};
+use crate::games::{
+    detect_proton_runtimes, Game, GameDetector, GamePlatform, GameType, ProtonRuntime,
+};
 use crate::mods::ModManager;
 use crate::nexus::NexusClient;
 use crate::profiles::ProfileManager;
@@ -40,17 +42,29 @@ pub struct App {
 
     /// Detected games
     pub games: Vec<Game>,
+
+    /// Global CLI verbosity (`-v`, `-vv`, `-vvv`)
+    pub cli_verbosity: u8,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExternalToolLaunchResult {
+    pub exit_code: i32,
+    pub stdout: String,
+    pub stderr: String,
 }
 
 impl App {
     /// Create a new App instance
     pub async fn new(config: Config) -> Result<Self> {
         // Ensure directories exist
-        config.ensure_dirs().context("Failed to create directories")?;
+        config
+            .ensure_dirs()
+            .context("Failed to create directories")?;
 
         // Initialize database
-        let db = Database::open(&config.paths.database_file())
-            .context("Failed to open database")?;
+        let db =
+            Database::open(&config.paths.database_file()).context("Failed to open database")?;
         let db = Arc::new(db);
 
         // Detect games (Steam + GOG + user-configured custom paths).
@@ -67,18 +81,15 @@ impl App {
         let state = AppState::new(active_game);
 
         // Initialize Nexus API client if API key is available
-        let nexus = config
-            .nexus_api_key
-            .as_ref()
-            .and_then(|key| {
-                NexusClient::new(key.clone())
-                    .map(Arc::new)
-                    .map_err(|e| {
-                        tracing::warn!("Failed to initialize Nexus API client: {}", e);
-                        e
-                    })
-                    .ok()
-            });
+        let nexus = config.nexus_api_key.as_ref().and_then(|key| {
+            NexusClient::new(key.clone())
+                .map(Arc::new)
+                .map_err(|e| {
+                    tracing::warn!("Failed to initialize Nexus API client: {}", e);
+                    e
+                })
+                .ok()
+        });
 
         // Wrap config
         let config = Arc::new(RwLock::new(config));
@@ -97,7 +108,12 @@ impl App {
             profiles,
             nexus,
             games,
+            cli_verbosity: 0,
         })
+    }
+
+    pub fn set_cli_verbosity(&mut self, verbosity: u8) {
+        self.cli_verbosity = verbosity;
     }
 
     /// Run the TUI interface
@@ -269,7 +285,9 @@ impl App {
             let config = self.config.read().await;
             let tool_path = config
                 .external_tool_path(tool)
-                .ok_or_else(|| anyhow::anyhow!("Tool path not configured for {}", tool.display_name()))?
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Tool path not configured for {}", tool.display_name())
+                })?
                 .to_string();
             let mode = config.external_tool_runtime_mode(tool);
             let proton_cmd = if mode == ToolRuntimeMode::Proton {
@@ -289,9 +307,12 @@ impl App {
             let resolved_proton_cmd = expand_user_path(proton_cmd.as_deref().unwrap_or("proton"));
             let mut command = tokio::process::Command::new(&resolved_proton_cmd);
             command.arg("run").arg(&resolved_tool_path);
-            // Typical Proton/Wine env for out-of-steam launches.
-            command.env("STEAM_COMPAT_DATA_PATH", &proton_prefix);
-            command.env("WINEPREFIX", proton_prefix.join("pfx"));
+            Self::apply_proton_launch_env(
+                &mut command,
+                &game,
+                &proton_prefix,
+                &resolved_proton_cmd,
+            );
             command
         } else {
             tokio::process::Command::new(&resolved_tool_path)
@@ -309,6 +330,112 @@ impl App {
             .with_context(|| format!("Failed to launch {} via Proton", tool.display_name()))?;
 
         Ok(status.code().unwrap_or_default())
+    }
+
+    /// Launch an external tool and capture stdout/stderr (used by TUI to keep output in-app).
+    pub async fn launch_external_tool_captured(
+        &self,
+        tool: ExternalTool,
+        args: &[String],
+    ) -> Result<ExternalToolLaunchResult> {
+        let game = self
+            .active_game()
+            .await
+            .ok_or_else(|| anyhow::anyhow!("No game selected"))?;
+        let (proton_cmd, tool_path, runtime_mode) = {
+            let config = self.config.read().await;
+            let tool_path = config
+                .external_tool_path(tool)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Tool path not configured for {}", tool.display_name())
+                })?
+                .to_string();
+            let mode = config.external_tool_runtime_mode(tool);
+            let proton_cmd = if mode == ToolRuntimeMode::Proton {
+                Some(self.resolve_proton_launcher_from_config(&config)?)
+            } else {
+                None
+            };
+            (proton_cmd, tool_path, mode)
+        };
+
+        let resolved_tool_path = expand_user_path(&tool_path);
+        let mut command = if runtime_mode == ToolRuntimeMode::Proton {
+            let proton_prefix = game
+                .proton_prefix
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("Active game has no Proton prefix detected"))?;
+            let resolved_proton_cmd = expand_user_path(proton_cmd.as_deref().unwrap_or("proton"));
+            let mut command = tokio::process::Command::new(&resolved_proton_cmd);
+            command.arg("run").arg(&resolved_tool_path);
+            Self::apply_proton_launch_env(
+                &mut command,
+                &game,
+                &proton_prefix,
+                &resolved_proton_cmd,
+            );
+            command
+        } else {
+            tokio::process::Command::new(&resolved_tool_path)
+        };
+        for arg in args {
+            command.arg(arg);
+        }
+        if let Some(parent) = Path::new(&resolved_tool_path).parent() {
+            command.current_dir(parent);
+        }
+
+        let output = command
+            .output()
+            .await
+            .with_context(|| format!("Failed to launch {} via Proton", tool.display_name()))?;
+
+        Ok(ExternalToolLaunchResult {
+            exit_code: output.status.code().unwrap_or_default(),
+            stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+            stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+        })
+    }
+
+    fn apply_proton_launch_env(
+        command: &mut tokio::process::Command,
+        game: &Game,
+        proton_prefix: &Path,
+        proton_cmd: &str,
+    ) {
+        // Core Proton/Wine env for out-of-steam launches.
+        command.env("STEAM_COMPAT_DATA_PATH", proton_prefix);
+        command.env("WINEPREFIX", proton_prefix.join("pfx"));
+        command.env("STEAM_COMPAT_INSTALL_PATH", &game.install_path);
+
+        if let Some(proton_dir) = Path::new(proton_cmd).parent() {
+            command.env("STEAM_COMPAT_TOOL_PATHS", proton_dir);
+        }
+
+        let compat_client_install = std::env::var("STEAM_COMPAT_CLIENT_INSTALL_PATH")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            .or_else(|| Self::infer_steam_client_install_path(proton_cmd));
+        if let Some(path) = compat_client_install {
+            command.env("STEAM_COMPAT_CLIENT_INSTALL_PATH", path);
+        }
+
+        if let Some(game_type) = GameType::from_id(&game.id) {
+            let app_id = game_type.steam_app_id().to_string();
+            command.env("SteamAppId", &app_id);
+            command.env("SteamGameId", &app_id);
+        }
+    }
+
+    fn infer_steam_client_install_path(proton_cmd: &str) -> Option<String> {
+        let mut cur = Path::new(proton_cmd).parent();
+        while let Some(path) = cur {
+            if path.file_name().and_then(|n| n.to_str()) == Some("steamapps") {
+                return path.parent().map(|p| p.display().to_string());
+            }
+            cur = path.parent();
+        }
+        None
     }
 
     /// Register/update a custom game install path (GOG/manual/steam override).
@@ -365,14 +492,22 @@ impl App {
     }
 
     /// Remove a custom game install path.
-    pub async fn remove_custom_game_path(&mut self, game_id: &str, install_path: &str) -> Result<()> {
+    pub async fn remove_custom_game_path(
+        &mut self,
+        game_id: &str,
+        install_path: &str,
+    ) -> Result<()> {
         let mut config = self.config.write().await;
         let before = config.custom_games.len();
         config.custom_games.retain(|entry| {
             !(entry.game_id.eq_ignore_ascii_case(game_id) && entry.install_path == install_path)
         });
         if config.custom_games.len() == before {
-            anyhow::bail!("No matching custom game path found for {} at {}", game_id, install_path);
+            anyhow::bail!(
+                "No matching custom game path found for {} at {}",
+                game_id,
+                install_path
+            );
         }
         config.save().await?;
         let custom_games = config.custom_games.clone();
@@ -387,7 +522,10 @@ fn find_runtime<'a>(runtimes: &'a [ProtonRuntime], selection: &str) -> Option<&'
     runtimes.iter().find(|rt| {
         rt.id.eq_ignore_ascii_case(selection)
             || rt.name.eq_ignore_ascii_case(selection)
-            || rt.proton_path.to_string_lossy().eq_ignore_ascii_case(selection)
+            || rt
+                .proton_path
+                .to_string_lossy()
+                .eq_ignore_ascii_case(selection)
     })
 }
 
@@ -404,9 +542,11 @@ fn pick_auto_runtime(runtimes: &[ProtonRuntime]) -> Option<&ProtonRuntime> {
         return Some(exp);
     }
 
-    runtimes
-        .iter()
-        .max_by(|a, b| a.name.to_ascii_lowercase().cmp(&b.name.to_ascii_lowercase()))
+    runtimes.iter().max_by(|a, b| {
+        a.name
+            .to_ascii_lowercase()
+            .cmp(&b.name.to_ascii_lowercase())
+    })
 }
 
 impl App {

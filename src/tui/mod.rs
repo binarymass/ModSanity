@@ -1,24 +1,24 @@
 //! Terminal User Interface using ratatui
 
+pub mod screens;
 mod ui;
 mod widgets;
-pub mod screens;
 
-use crate::app::{App, InputMode, Screen};
 use crate::app::state::AppState;
+use crate::app::{App, InputMode, Screen};
 use crate::config::ExternalTool;
 use crate::db::Database;
 use crate::plugins;
 use anyhow::Result;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers, MouseEvent, MouseEventKind, MouseButton},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers, MouseButton,
+        MouseEvent, MouseEventKind,
+    },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use ratatui::{
-    backend::CrosstermBackend,
-    Terminal,
-};
+use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io;
 use std::sync::Arc;
 use std::time::Duration;
@@ -60,7 +60,6 @@ impl Tui {
         self.terminal.show_cursor()?;
         Ok(())
     }
-
 
     /// Run the TUI main loop
     pub async fn run(&mut self, app: &mut App) -> Result<()> {
@@ -190,7 +189,7 @@ impl Tui {
             10 => Some(ExternalTool::SSEEdit),
             11 => Some(ExternalTool::FNIS),
             12 => Some(ExternalTool::Nemesis),
-            13 => Some(ExternalTool::Symphony),
+            13 => Some(ExternalTool::Synthesis),
             14 => Some(ExternalTool::BodySlide),
             15 => Some(ExternalTool::OutfitStudio),
             _ => None,
@@ -292,13 +291,8 @@ impl Tui {
         });
     }
 
-    fn spawn_load_modlist(
-        state: Arc<RwLock<AppState>>,
-        db: Arc<Database>,
-        path: String,
-    ) {
+    fn spawn_load_modlist(state: Arc<RwLock<AppState>>, db: Arc<Database>, path: String) {
         tokio::spawn(async move {
-
             // Detect format
             let format = match crate::import::detect_format(std::path::Path::new(&path)) {
                 Ok(f) => f,
@@ -312,7 +306,9 @@ impl Tui {
             match format {
                 crate::import::ModlistFormat::Native => {
                     // Load native modlist
-                    let modlist = match crate::import::modlist_format::load_native(std::path::Path::new(&path)) {
+                    let modlist = match crate::import::modlist_format::load_native(
+                        std::path::Path::new(&path),
+                    ) {
                         Ok(m) => m,
                         Err(e) => {
                             let mut state = state.write().await;
@@ -346,7 +342,8 @@ impl Tui {
                         return;
                     }
 
-                    let modlist_name = Self::modlist_name_from_path(&path, "Imported Native Modlist");
+                    let modlist_name =
+                        Self::modlist_name_from_path(&path, "Imported Native Modlist");
                     let db_entries: Vec<crate::db::ModlistEntryRecord> = modlist
                         .mods
                         .iter()
@@ -395,8 +392,10 @@ impl Tui {
                     let review = crate::app::state::ModlistReviewData {
                         source_path: path,
                         format: "Native JSON".to_string(),
-                        total_mods: check_result.already_installed.len() + check_result.needs_download.len(),
-                        already_installed: check_result.already_installed
+                        total_mods: check_result.already_installed.len()
+                            + check_result.needs_download.len(),
+                        already_installed: check_result
+                            .already_installed
                             .iter()
                             .map(|(entry, _)| entry.name.clone())
                             .collect(),
@@ -409,7 +408,8 @@ impl Tui {
                     state.modlist_review_data = Some(review);
                     state.selected_modlist_entry = 0;
                     state.goto(Screen::ModlistReview);
-                    state.set_status_success(format!("Loaded and stored modlist: {}", modlist_name));
+                    state
+                        .set_status_success(format!("Loaded and stored modlist: {}", modlist_name));
                 }
                 crate::import::ModlistFormat::Mo2 => {
                     // Delegate to existing import
@@ -473,23 +473,21 @@ impl Tui {
                 })
                 .collect();
 
-            let check_result = match crate::import::library_check::check_library(
-                &db,
-                &game_id,
-                mod_entries,
-            ) {
-                Ok(r) => r,
-                Err(e) => {
-                    let mut state = state.write().await;
-                    state.set_status_error(format!("Library check error: {}", e));
-                    return;
-                }
-            };
+            let check_result =
+                match crate::import::library_check::check_library(&db, &game_id, mod_entries) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        let mut state = state.write().await;
+                        state.set_status_error(format!("Library check error: {}", e));
+                        return;
+                    }
+                };
 
             let review = crate::app::state::ModlistReviewData {
                 source_path: format!("saved: {}", modlist_name),
                 format: "Saved Modlist".to_string(),
-                total_mods: check_result.already_installed.len() + check_result.needs_download.len(),
+                total_mods: check_result.already_installed.len()
+                    + check_result.needs_download.len(),
                 already_installed: check_result
                     .already_installed
                     .iter()
@@ -508,10 +506,7 @@ impl Tui {
         });
     }
 
-    fn spawn_queue_modlist_downloads(
-        state: Arc<RwLock<AppState>>,
-        db: Arc<Database>,
-    ) {
+    fn spawn_queue_modlist_downloads(state: Arc<RwLock<AppState>>, db: Arc<Database>) {
         tokio::spawn(async move {
             // Get review data
             let (needs_download, game_id) = {
@@ -621,7 +616,11 @@ impl Tui {
             let target_enabled = installed_mod
                 .nexus_mod_id
                 .and_then(|id| entries_by_nexus.get(&id).copied())
-                .or_else(|| entries_by_name.get(&installed_mod.name.to_ascii_lowercase()).copied());
+                .or_else(|| {
+                    entries_by_name
+                        .get(&installed_mod.name.to_ascii_lowercase())
+                        .copied()
+                });
 
             if let Some(enabled) = target_enabled {
                 matched += 1;
@@ -659,7 +658,10 @@ impl Tui {
         Ok(())
     }
 
-    async fn add_installed_mods_to_modlist(app: &mut App, modlist_id: i64) -> Result<(usize, usize)> {
+    async fn add_installed_mods_to_modlist(
+        app: &mut App,
+        modlist_id: i64,
+    ) -> Result<(usize, usize)> {
         let game = match app.active_game().await {
             Some(game) => game,
             None => anyhow::bail!("No active game selected"),
@@ -766,7 +768,10 @@ impl Tui {
         Ok(selected.name)
     }
 
-    fn collect_local_mod_candidates(dir: &std::path::Path, results: &mut Vec<(String, Option<String>)>) -> Result<()> {
+    fn collect_local_mod_candidates(
+        dir: &std::path::Path,
+        results: &mut Vec<(String, Option<String>)>,
+    ) -> Result<()> {
         if !dir.exists() || !dir.is_dir() {
             anyhow::bail!("Path '{}' is not a directory", dir.display());
         }
@@ -794,7 +799,10 @@ impl Tui {
                     continue;
                 }
                 let normalized = stem.replace('_', " ").replace('-', " ").trim().to_string();
-                let source_file = path.file_name().and_then(|s| s.to_str()).map(|s| s.to_string());
+                let source_file = path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .map(|s| s.to_string());
                 results.push((normalized, source_file));
             }
         }
@@ -875,7 +883,8 @@ impl Tui {
             };
 
             let current_name = m.name.trim();
-            let looks_unresolved = !current_name.is_empty() && current_name.chars().all(|c| c.is_ascii_digit());
+            let looks_unresolved =
+                !current_name.is_empty() && current_name.chars().all(|c| c.is_ascii_digit());
             if !looks_unresolved {
                 skipped += 1;
                 continue;
@@ -917,7 +926,9 @@ impl Tui {
                 continue;
             };
 
-            if resolved_name.eq_ignore_ascii_case(current_name) && m.nexus_mod_id == Some(lookup_mod_id) {
+            if resolved_name.eq_ignore_ascii_case(current_name)
+                && m.nexus_mod_id == Some(lookup_mod_id)
+            {
                 skipped += 1;
                 continue;
             }
@@ -969,6 +980,69 @@ impl Tui {
         Ok(())
     }
 
+    fn normalize_tab_screen(screen: Screen) -> Screen {
+        match screen {
+            Screen::Dashboard
+            | Screen::Mods
+            | Screen::ModDetails
+            | Screen::Browse
+            | Screen::LoadOrder
+            | Screen::Collection
+            | Screen::GameSelect
+            | Screen::FomodWizard => Screen::Mods,
+            Screen::Import | Screen::ImportReview | Screen::ModlistReview => Screen::Import,
+            other => other,
+        }
+    }
+
+    async fn launch_external_tool_from_tui(
+        &mut self,
+        app: &mut App,
+        tool: ExternalTool,
+    ) -> Result<()> {
+        {
+            let mut state = app.state.write().await;
+            state.set_status(format!("Launching {}...", tool.display_name()));
+        }
+
+        // Leave alternate-screen/raw mode so subprocess output cannot corrupt the TUI buffer.
+        self.restore()?;
+        let launch_result = app.launch_external_tool_captured(tool, &[]).await;
+        self.setup()?;
+        self.terminal.clear()?;
+
+        let mut state = app.state.write().await;
+        match launch_result {
+            Ok(result) => {
+                state.push_command_output_line(format!(
+                    "[{}] exited with {}",
+                    tool.display_name(),
+                    result.exit_code
+                ));
+                if !result.stdout.trim().is_empty() {
+                    state.push_command_output_line(format!("[{} stdout]", tool.display_name()));
+                    state.push_command_output_text(&result.stdout);
+                }
+                if !result.stderr.trim().is_empty() {
+                    state.push_command_output_line(format!("[{} stderr]", tool.display_name()));
+                    state.push_command_output_text(&result.stderr);
+                }
+                state.set_status(format!(
+                    "{} exited with {}",
+                    tool.display_name(),
+                    result.exit_code
+                ));
+            }
+            Err(e) => {
+                state.push_command_output_line(format!("[{} launch error]", tool.display_name()));
+                state.push_command_output_line(e.to_string());
+                state.set_status_error(format!("Launch failed: {}", e));
+            }
+        }
+
+        Ok(())
+    }
+
     /// Main event loop
     async fn event_loop(&mut self, app: &mut App) -> Result<()> {
         loop {
@@ -1001,8 +1075,23 @@ impl Tui {
     }
 
     /// Handle keyboard input
-    async fn handle_key(&self, app: &mut App, key: KeyCode, modifiers: KeyModifiers) -> Result<()> {
+    async fn handle_key(
+        &mut self,
+        app: &mut App,
+        key: KeyCode,
+        modifiers: KeyModifiers,
+    ) -> Result<()> {
         let mut state = app.state.write().await;
+
+        if state.bulk_install_running
+            && matches!(key, KeyCode::Esc | KeyCode::Char('x') | KeyCode::Char('X'))
+        {
+            state.bulk_install_cancel_requested = true;
+            state.set_status_info(
+                "Bulk install cancel requested; waiting for current archive to finish",
+            );
+            return Ok(());
+        }
 
         // Handle input mode
         if state.input_mode == InputMode::ModInstallPath {
@@ -1043,7 +1132,10 @@ impl Tui {
                                 state.set_status("No mod archives found in directory");
                             } else {
                                 let mut state = app.state.write().await;
-                                state.set_status(format!("Found {} archives - select files manually", archives.len()));
+                                state.set_status(format!(
+                                    "Found {} archives - select files manually",
+                                    archives.len()
+                                ));
                             }
                         }
                         return Ok(());
@@ -1054,28 +1146,42 @@ impl Tui {
                         let state_clone = app.state.clone();
 
                         // Create progress callback
-                        let progress_callback = std::sync::Arc::new(move |current_file: String, processed: usize, total: usize| {
-                            if let Ok(mut state) = state_clone.try_write() {
-                                let percent = if total > 0 {
-                                    ((processed as f64 / total as f64) * 100.0) as u16
-                                } else {
-                                    0
-                                };
+                        let progress_callback = std::sync::Arc::new(
+                            move |current_file: String, processed: usize, total: usize| {
+                                if let Ok(mut state) = state_clone.try_write() {
+                                    let percent = if total > 0 {
+                                        ((processed as f64 / total as f64) * 100.0) as u16
+                                    } else {
+                                        0
+                                    };
 
-                                state.installation_progress = Some(crate::app::state::InstallProgress {
-                                    percent,
-                                    current_file,
-                                    total_files: total,
-                                    processed_files: processed,
-                                    // Single mod install - no bulk context
-                                    current_mod_name: None,
-                                    current_mod_index: None,
-                                    total_mods: None,
-                                });
-                            }
-                        });
+                                    state.installation_progress =
+                                        Some(crate::app::state::InstallProgress {
+                                            percent,
+                                            current_file,
+                                            total_files: total,
+                                            processed_files: processed,
+                                            // Single mod install - no bulk context
+                                            current_mod_name: None,
+                                            current_mod_index: None,
+                                            total_mods: None,
+                                        });
+                                }
+                            },
+                        );
 
-                        match app.mods.install_from_archive(&game.id, &expanded_path, Some(progress_callback), None, None, None).await {
+                        match app
+                            .mods
+                            .install_from_archive(
+                                &game.id,
+                                &expanded_path,
+                                Some(progress_callback),
+                                None,
+                                None,
+                                None,
+                            )
+                            .await
+                        {
                             Ok(crate::mods::InstallResult::Completed(installed)) => {
                                 // Clear progress FIRST to prevent UI corruption
                                 {
@@ -1087,7 +1193,10 @@ impl Tui {
                                 self.refresh_mods(app).await?;
 
                                 let mut state = app.state.write().await;
-                                state.set_status(format!("Installed: {} (v{})", installed.name, installed.version));
+                                state.set_status(format!(
+                                    "Installed: {} (v{})",
+                                    installed.name, installed.version
+                                ));
                             }
                             Ok(crate::mods::InstallResult::RequiresWizard(context)) => {
                                 // Clear progress
@@ -1098,8 +1207,8 @@ impl Tui {
                                 }
 
                                 // Initialize wizard state
-                                use crate::mods::fomod::wizard::init_wizard_state;
                                 use crate::app::state::{FomodWizardState, WizardPhase};
+                                use crate::mods::fomod::wizard::init_wizard_state;
 
                                 let wizard = init_wizard_state(&context.installer.config);
                                 let wizard_state = FomodWizardState {
@@ -1298,7 +1407,10 @@ impl Tui {
                             resolved.display()
                         ));
                     } else {
-                        state.set_status(format!("Downloads directory set to: {}", resolved.display()));
+                        state.set_status(format!(
+                            "Downloads directory set to: {}",
+                            resolved.display()
+                        ));
                     }
                     return Ok(());
                 }
@@ -1350,7 +1462,10 @@ impl Tui {
                             resolved.display()
                         ));
                     } else {
-                        state.set_status(format!("Staging directory set to: {}", resolved.display()));
+                        state.set_status(format!(
+                            "Staging directory set to: {}",
+                            resolved.display()
+                        ));
                     }
                     return Ok(());
                 }
@@ -1416,12 +1531,20 @@ impl Tui {
                     if let Err(e) = app
                         .set_external_tool_path(
                             tool,
-                            if path.trim().is_empty() { None } else { Some(path.as_str()) },
+                            if path.trim().is_empty() {
+                                None
+                            } else {
+                                Some(path.as_str())
+                            },
                         )
                         .await
                     {
                         let mut state = app.state.write().await;
-                        state.set_status(format!("Error saving {} path: {}", tool.display_name(), e));
+                        state.set_status(format!(
+                            "Error saving {} path: {}",
+                            tool.display_name(),
+                            e
+                        ));
                         return Ok(());
                     }
 
@@ -1479,7 +1602,8 @@ impl Tui {
                             Ok(client) => {
                                 app.nexus = Some(Arc::new(client));
                                 let mut state = app.state.write().await;
-                                state.set_status("NexusMods API key saved successfully".to_string());
+                                state
+                                    .set_status("NexusMods API key saved successfully".to_string());
                             }
                             Err(e) => {
                                 let mut state = app.state.write().await;
@@ -1760,7 +1884,9 @@ impl Tui {
 
                     // Spawn save task
                     tokio::spawn(async move {
-                        use crate::import::modlist_format::{ModSanityModlist, ModlistMeta, ModlistEntry, PluginOrderEntry};
+                        use crate::import::modlist_format::{
+                            ModSanityModlist, ModlistEntry, ModlistMeta, PluginOrderEntry,
+                        };
                         use crate::plugins;
                         use anyhow::Context;
 
@@ -1778,7 +1904,10 @@ impl Tui {
                                             .iter()
                                             .map(|entry| ModlistEntry {
                                                 name: entry.name.clone(),
-                                                version: entry.version.clone().unwrap_or_else(|| "unknown".to_string()),
+                                                version: entry
+                                                    .version
+                                                    .clone()
+                                                    .unwrap_or_else(|| "unknown".to_string()),
                                                 nexus_mod_id: entry.nexus_mod_id,
                                                 nexus_file_id: None,
                                                 author: entry.author.clone(),
@@ -1791,14 +1920,17 @@ impl Tui {
                                             .iter()
                                             .enumerate()
                                             .filter_map(|(i, entry)| {
-                                                entry.plugin_name.as_ref().map(|plugin| PluginOrderEntry {
-                                                    filename: plugin.clone(),
-                                                    load_order: i as i32,
-                                                    enabled: entry.enabled,
+                                                entry.plugin_name.as_ref().map(|plugin| {
+                                                    PluginOrderEntry {
+                                                        filename: plugin.clone(),
+                                                        load_order: i as i32,
+                                                        enabled: entry.enabled,
+                                                    }
                                                 })
                                             })
                                             .collect();
-                                        let profile_name = config_clone.read().await.active_profile.clone();
+                                        let profile_name =
+                                            config_clone.read().await.active_profile.clone();
                                         let modlist = ModSanityModlist {
                                             meta: ModlistMeta {
                                                 format_version: 1,
@@ -1811,7 +1943,9 @@ impl Tui {
                                             mods: mod_entries,
                                             plugins: plugin_entries,
                                         };
-                                        crate::import::modlist_format::save_native(out_path, &modlist)?;
+                                        crate::import::modlist_format::save_native(
+                                            out_path, &modlist,
+                                        )?;
                                     }
                                     "mo2" => {
                                         let mut lines = Vec::new();
@@ -1838,13 +1972,15 @@ impl Tui {
 
                                         // Get category names
                                         let categories = db_clone.get_all_categories()?;
-                                        let cat_map: std::collections::HashMap<i64, String> = categories
-                                            .into_iter()
-                                            .filter_map(|c| c.id.map(|id| (id, c.name)))
-                                            .collect();
+                                        let cat_map: std::collections::HashMap<i64, String> =
+                                            categories
+                                                .into_iter()
+                                                .filter_map(|c| c.id.map(|id| (id, c.name)))
+                                                .collect();
 
-                                        let mod_entries: Vec<ModlistEntry> = mods.iter().map(|m| {
-                                            ModlistEntry {
+                                        let mod_entries: Vec<ModlistEntry> = mods
+                                            .iter()
+                                            .map(|m| ModlistEntry {
                                                 name: m.name.clone(),
                                                 version: m.version.clone(),
                                                 nexus_mod_id: m.nexus_mod_id,
@@ -1852,23 +1988,28 @@ impl Tui {
                                                 author: m.author.clone(),
                                                 priority: m.priority,
                                                 enabled: m.enabled,
-                                                category: m.category_id.and_then(|id| cat_map.get(&id).cloned()),
-                                            }
-                                        }).collect();
+                                                category: m
+                                                    .category_id
+                                                    .and_then(|id| cat_map.get(&id).cloned()),
+                                            })
+                                            .collect();
 
                                         // Get plugins
-                                        let plugin_entries: Vec<PluginOrderEntry> = match plugins::get_plugins(&game) {
-                                            Ok(plist) => plist.iter().map(|p| {
-                                                PluginOrderEntry {
-                                                    filename: p.filename.clone(),
-                                                    load_order: p.load_order as i32,
-                                                    enabled: p.enabled,
-                                                }
-                                            }).collect(),
-                                            Err(_) => Vec::new(),
-                                        };
+                                        let plugin_entries: Vec<PluginOrderEntry> =
+                                            match plugins::get_plugins(&game) {
+                                                Ok(plist) => plist
+                                                    .iter()
+                                                    .map(|p| PluginOrderEntry {
+                                                        filename: p.filename.clone(),
+                                                        load_order: p.load_order as i32,
+                                                        enabled: p.enabled,
+                                                    })
+                                                    .collect(),
+                                                Err(_) => Vec::new(),
+                                            };
 
-                                        let profile_name = config_clone.read().await.active_profile.clone();
+                                        let profile_name =
+                                            config_clone.read().await.active_profile.clone();
 
                                         let modlist = ModSanityModlist {
                                             meta: ModlistMeta {
@@ -1883,13 +2024,17 @@ impl Tui {
                                             plugins: plugin_entries,
                                         };
 
-                                        crate::import::modlist_format::save_native(out_path, &modlist)?;
+                                        crate::import::modlist_format::save_native(
+                                            out_path, &modlist,
+                                        )?;
                                     }
                                     "mo2" => {
                                         // Write MO2 modlist.txt format (plugin list)
                                         let plugin_list = match plugins::get_plugins(&game) {
                                             Ok(plist) => plist,
-                                            Err(e) => anyhow::bail!("Failed to read plugins: {}", e),
+                                            Err(e) => {
+                                                anyhow::bail!("Failed to read plugins: {}", e)
+                                            }
                                         };
 
                                         let mut lines = Vec::new();
@@ -1927,7 +2072,8 @@ impl Tui {
                                         version: Some(m.version.clone()),
                                     })
                                     .collect();
-                                let modlist_name = Self::modlist_name_from_path(&expanded_path, "Saved Modlist");
+                                let modlist_name =
+                                    Self::modlist_name_from_path(&expanded_path, "Saved Modlist");
                                 db_clone.upsert_modlist_with_entries(
                                     &game_id,
                                     &modlist_name,
@@ -1938,12 +2084,16 @@ impl Tui {
                             }
 
                             Ok(())
-                        }.await;
+                        }
+                        .await;
 
                         match result {
                             Ok(_) => {
                                 let mut state = state_clone.write().await;
-                                state.set_status_success(format!("Modlist saved to {}", expanded_path));
+                                state.set_status_success(format!(
+                                    "Modlist saved to {}",
+                                    expanded_path
+                                ));
                             }
                             Err(e) => {
                                 let mut state = state_clone.write().await;
@@ -2030,7 +2180,8 @@ impl Tui {
                         // Load default page
                         screens::nexus_catalog::load_catalog_page(app, &game_domain, 0, "").await?;
                     } else {
-                        screens::nexus_catalog::load_catalog_page(app, &game_domain, 0, &query).await?;
+                        screens::nexus_catalog::load_catalog_page(app, &game_domain, 0, &query)
+                            .await?;
                     }
                     return Ok(());
                 }
@@ -2068,7 +2219,10 @@ impl Tui {
                                             let mut state = app.state.write().await;
                                             state.saved_modlists = lists;
                                             state.active_modlist_id = None;
-                                            state.set_status_success(format!("Renamed modlist to: {}", name));
+                                            state.set_status_success(format!(
+                                                "Renamed modlist to: {}",
+                                                name
+                                            ));
                                         }
                                     }
                                     Err(e) => {
@@ -2084,7 +2238,10 @@ impl Tui {
                                         if let Ok(lists) = app.db.get_modlists_for_game(&game_id) {
                                             let mut state = app.state.write().await;
                                             state.saved_modlists = lists;
-                                            state.set_status_success(format!("Created modlist: {}", name));
+                                            state.set_status_success(format!(
+                                                "Created modlist: {}",
+                                                name
+                                            ));
                                         }
                                     }
                                     Err(e) => {
@@ -2247,12 +2404,16 @@ impl Tui {
                             let mut state = app.state.write().await;
                             state.queue_entries = entries;
                             if !state.queue_entries.is_empty() {
-                                state.selected_queue_index = selected_idx.min(state.queue_entries.len() - 1);
+                                state.selected_queue_index =
+                                    selected_idx.min(state.queue_entries.len() - 1);
                             } else {
                                 state.selected_queue_index = 0;
                             }
                             state.selected_queue_alternative_index = 0;
-                            state.set_status_success(format!("Resolved entry with Nexus mod ID {}", nexus_mod_id));
+                            state.set_status_success(format!(
+                                "Resolved entry with Nexus mod ID {}",
+                                nexus_mod_id
+                            ));
                         }
                     }
                     return Ok(());
@@ -2278,14 +2439,19 @@ impl Tui {
                     }
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
-                    if state.fomod_selection_index < state.fomod_components.len().saturating_sub(1) {
+                    if state.fomod_selection_index < state.fomod_components.len().saturating_sub(1)
+                    {
                         state.fomod_selection_index += 1;
                     }
                 }
                 KeyCode::Char(' ') => {
                     // Toggle selection
                     let idx = state.fomod_selection_index;
-                    if let Some(pos) = state.selected_fomod_components.iter().position(|&i| i == idx) {
+                    if let Some(pos) = state
+                        .selected_fomod_components
+                        .iter()
+                        .position(|&i| i == idx)
+                    {
                         state.selected_fomod_components.remove(pos);
                     } else {
                         state.selected_fomod_components.push(idx);
@@ -2303,7 +2469,13 @@ impl Tui {
                     drop(state);
 
                     if let Some(archive_path) = archive_path {
-                        self.install_fomod_components(app, &archive_path, &components, &selected_indices).await?;
+                        self.install_fomod_components(
+                            app,
+                            &archive_path,
+                            &components,
+                            &selected_indices,
+                        )
+                        .await?;
                     }
                 }
                 KeyCode::Esc => {
@@ -2375,15 +2547,22 @@ impl Tui {
                                             state.browse_mod_files = files;
                                             state.selected_file_index = 0;
                                             state.showing_file_picker = true;
-                                            state.download_context = Some(crate::app::state::DownloadContext {
-                                                mod_id: req.mod_id,
-                                                mod_name: req.name.clone(),
-                                                game_domain: game_domain.clone(),
-                                                game_id: game_id_numeric,
-                                            });
-                                            state.set_status(format!("Select file to download for {}", req.name));
+                                            state.download_context =
+                                                Some(crate::app::state::DownloadContext {
+                                                    mod_id: req.mod_id,
+                                                    mod_name: req.name.clone(),
+                                                    game_domain: game_domain.clone(),
+                                                    game_id: game_id_numeric,
+                                                });
+                                            state.set_status(format!(
+                                                "Select file to download for {}",
+                                                req.name
+                                            ));
                                         } else {
-                                            state.set_status(format!("No files found for {}", req.name));
+                                            state.set_status(format!(
+                                                "No files found for {}",
+                                                req.name
+                                            ));
                                         }
                                     }
                                     Err(e) => {
@@ -2483,7 +2662,9 @@ impl Tui {
                     other => other,
                 };
                 let Some(mut pos) = flow.iter().position(|s| *s == normalized_current) else {
-                    state.set_status_info("Pipeline navigation is available in Mods/Modlists/Import/Queue");
+                    state.set_status_info(
+                        "Pipeline navigation is available in Mods/Modlists/Import/Queue",
+                    );
                     return Ok(());
                 };
 
@@ -2507,15 +2688,15 @@ impl Tui {
             (KeyCode::Tab, _) | (KeyCode::BackTab, _) => {
                 let flow = [
                     Screen::Mods,
-                    Screen::ModlistEditor,
-                    Screen::Import,
-                    Screen::DownloadQueue,
                     Screen::Plugins,
                     Screen::Profiles,
                     Screen::Settings,
+                    Screen::Import,
+                    Screen::DownloadQueue,
                     Screen::NexusCatalog,
+                    Screen::ModlistEditor,
                 ];
-                let current = state.current_screen;
+                let current = Self::normalize_tab_screen(state.current_screen);
                 let mut pos = flow.iter().position(|s| *s == current).unwrap_or(0);
                 if key == KeyCode::BackTab {
                     if pos == 0 {
@@ -2663,22 +2844,20 @@ impl Tui {
                             state.selected_catalog_index += 1;
                         }
                     }
-                    Screen::ModlistEditor => {
-                        match state.modlist_editor_mode {
-                            crate::app::state::ModlistEditorMode::ListPicker => {
-                                let count = state.saved_modlists.len();
-                                if count > 0 && state.selected_saved_modlist_index < count - 1 {
-                                    state.selected_saved_modlist_index += 1;
-                                }
-                            }
-                            crate::app::state::ModlistEditorMode::EntryEditor => {
-                                let count = state.modlist_editor_entries.len();
-                                if count > 0 && state.selected_modlist_editor_index < count - 1 {
-                                    state.selected_modlist_editor_index += 1;
-                                }
+                    Screen::ModlistEditor => match state.modlist_editor_mode {
+                        crate::app::state::ModlistEditorMode::ListPicker => {
+                            let count = state.saved_modlists.len();
+                            if count > 0 && state.selected_saved_modlist_index < count - 1 {
+                                state.selected_saved_modlist_index += 1;
                             }
                         }
-                    }
+                        crate::app::state::ModlistEditorMode::EntryEditor => {
+                            let count = state.modlist_editor_entries.len();
+                            if count > 0 && state.selected_modlist_editor_index < count - 1 {
+                                state.selected_modlist_editor_index += 1;
+                            }
+                        }
+                    },
                     Screen::LoadOrder => {
                         let count = state.load_order_mods.len();
                         if count > 0 && state.load_order_index < count - 1 {
@@ -2688,76 +2867,72 @@ impl Tui {
                     _ => {}
                 }
             }
-            MouseEventKind::ScrollUp => {
-                match state.current_screen {
-                    Screen::Mods | Screen::Dashboard => {
-                        if state.selected_mod_index > 0 {
-                            state.selected_mod_index -= 1;
-                        }
+            MouseEventKind::ScrollUp => match state.current_screen {
+                Screen::Mods | Screen::Dashboard => {
+                    if state.selected_mod_index > 0 {
+                        state.selected_mod_index -= 1;
                     }
-                    Screen::Plugins => {
-                        if state.selected_plugin_index > 0 {
-                            state.selected_plugin_index -= 1;
-                        }
-                    }
-                    Screen::Profiles => {
-                        if state.selected_profile_index > 0 {
-                            state.selected_profile_index -= 1;
-                        }
-                    }
-                    Screen::Settings => {
-                        if state.selected_setting_index > 0 {
-                            state.selected_setting_index -= 1;
-                        }
-                    }
-                    Screen::Browse => {
-                        if state.selected_browse_index > 0 {
-                            state.selected_browse_index -= 1;
-                        }
-                    }
-                    Screen::GameSelect => {
-                        if state.selected_game_index > 0 {
-                            state.selected_game_index -= 1;
-                        }
-                    }
-                    Screen::ImportReview => {
-                        if state.selected_import_index > 0 {
-                            state.selected_import_index -= 1;
-                        }
-                    }
-                    Screen::DownloadQueue => {
-                        if state.selected_queue_index > 0 {
-                            state.selected_queue_index -= 1;
-                            state.selected_queue_alternative_index = 0;
-                        }
-                    }
-                    Screen::NexusCatalog => {
-                        if state.selected_catalog_index > 0 {
-                            state.selected_catalog_index -= 1;
-                        }
-                    }
-                    Screen::ModlistEditor => {
-                        match state.modlist_editor_mode {
-                            crate::app::state::ModlistEditorMode::ListPicker => {
-                                if state.selected_saved_modlist_index > 0 {
-                                    state.selected_saved_modlist_index -= 1;
-                                }
-                            }
-                            crate::app::state::ModlistEditorMode::EntryEditor => {
-                                if state.selected_modlist_editor_index > 0 {
-                                    state.selected_modlist_editor_index -= 1;
-                                }
-                            }
-                        }
-                    }
-                    Screen::LoadOrder => {
-                        if state.load_order_index > 0 {
-                            state.load_order_index -= 1;
-                        }
-                    }
-                    _ => {}
                 }
-            }
+                Screen::Plugins => {
+                    if state.selected_plugin_index > 0 {
+                        state.selected_plugin_index -= 1;
+                    }
+                }
+                Screen::Profiles => {
+                    if state.selected_profile_index > 0 {
+                        state.selected_profile_index -= 1;
+                    }
+                }
+                Screen::Settings => {
+                    if state.selected_setting_index > 0 {
+                        state.selected_setting_index -= 1;
+                    }
+                }
+                Screen::Browse => {
+                    if state.selected_browse_index > 0 {
+                        state.selected_browse_index -= 1;
+                    }
+                }
+                Screen::GameSelect => {
+                    if state.selected_game_index > 0 {
+                        state.selected_game_index -= 1;
+                    }
+                }
+                Screen::ImportReview => {
+                    if state.selected_import_index > 0 {
+                        state.selected_import_index -= 1;
+                    }
+                }
+                Screen::DownloadQueue => {
+                    if state.selected_queue_index > 0 {
+                        state.selected_queue_index -= 1;
+                        state.selected_queue_alternative_index = 0;
+                    }
+                }
+                Screen::NexusCatalog => {
+                    if state.selected_catalog_index > 0 {
+                        state.selected_catalog_index -= 1;
+                    }
+                }
+                Screen::ModlistEditor => match state.modlist_editor_mode {
+                    crate::app::state::ModlistEditorMode::ListPicker => {
+                        if state.selected_saved_modlist_index > 0 {
+                            state.selected_saved_modlist_index -= 1;
+                        }
+                    }
+                    crate::app::state::ModlistEditorMode::EntryEditor => {
+                        if state.selected_modlist_editor_index > 0 {
+                            state.selected_modlist_editor_index -= 1;
+                        }
+                    }
+                },
+                Screen::LoadOrder => {
+                    if state.load_order_index > 0 {
+                        state.load_order_index -= 1;
+                    }
+                }
+                _ => {}
+            },
             MouseEventKind::Down(MouseButton::Left) => {
                 // Check if click is on tab bar row (row 3, 0-indexed)
                 // Tab bar is at row 3 (after 3-line header)
@@ -2798,7 +2973,7 @@ impl Tui {
 
     /// Handle screen-specific keys
     async fn handle_screen_key(
-        &self,
+        &mut self,
         app: &mut App,
         key: KeyCode,
         _modifiers: KeyModifiers,
@@ -2826,7 +3001,11 @@ impl Tui {
                     state.download_context = None;
                 }
                 KeyCode::Enter => {
-                    if let Some(file) = state.browse_mod_files.get(state.selected_file_index).cloned() {
+                    if let Some(file) = state
+                        .browse_mod_files
+                        .get(state.selected_file_index)
+                        .cloned()
+                    {
                         if let Some(ctx) = state.download_context.clone() {
                             let file_name = file.file_name.clone();
                             state.showing_file_picker = false;
@@ -2841,33 +3020,46 @@ impl Tui {
 
                             tokio::spawn(async move {
                                 // Get download link via REST API
-                                match nexus_clone.get_download_link(
-                                    &ctx.game_domain,
-                                    ctx.mod_id,
-                                    file.file_id,
-                                ).await {
+                                match nexus_clone
+                                    .get_download_link(&ctx.game_domain, ctx.mod_id, file.file_id)
+                                    .await
+                                {
                                     Ok(links) => {
                                         if let Some(link) = links.first() {
                                             // Set up download progress
                                             {
                                                 let mut state = state_clone.write().await;
-                                                state.download_progress = Some(crate::app::state::DownloadProgress {
-                                                    file_name: file_name.clone(),
-                                                    downloaded_bytes: 0,
-                                                    total_bytes: file.size_bytes as u64,
-                                                });
-                                                state.set_status(format!("Downloading {}...", file_name));
+                                                state.download_progress =
+                                                    Some(crate::app::state::DownloadProgress {
+                                                        file_name: file_name.clone(),
+                                                        downloaded_bytes: 0,
+                                                        total_bytes: file.size_bytes as u64,
+                                                    });
+                                                state.set_status(format!(
+                                                    "Downloading {}...",
+                                                    file_name
+                                                ));
                                             }
 
                                             // Download to temp file
                                             let download_dir = std::env::var("HOME")
-                                                .map(|h| std::path::PathBuf::from(h).join(".cache/modsanity/downloads"))
-                                                .unwrap_or_else(|_| std::path::PathBuf::from("/tmp/modsanity"));
+                                                .map(|h| {
+                                                    std::path::PathBuf::from(h)
+                                                        .join(".cache/modsanity/downloads")
+                                                })
+                                                .unwrap_or_else(|_| {
+                                                    std::path::PathBuf::from("/tmp/modsanity")
+                                                });
 
-                                            if let Err(e) = tokio::fs::create_dir_all(&download_dir).await {
+                                            if let Err(e) =
+                                                tokio::fs::create_dir_all(&download_dir).await
+                                            {
                                                 let mut state = state_clone.write().await;
                                                 state.download_progress = None;
-                                                state.set_status(format!("Failed to create download dir: {}", e));
+                                                state.set_status(format!(
+                                                    "Failed to create download dir: {}",
+                                                    e
+                                                ));
                                                 return;
                                             }
 
@@ -2883,7 +3075,9 @@ impl Tui {
                                                     let state_ref = state_for_progress.clone();
                                                     tokio::spawn(async move {
                                                         let mut state = state_ref.write().await;
-                                                        if let Some(ref mut progress) = state.download_progress {
+                                                        if let Some(ref mut progress) =
+                                                            state.download_progress
+                                                        {
                                                             progress.downloaded_bytes = downloaded;
                                                             if total > 0 {
                                                                 progress.total_bytes = total;
@@ -2891,29 +3085,52 @@ impl Tui {
                                                         }
                                                     });
                                                 },
-                                            ).await {
+                                            )
+                                            .await
+                                            {
                                                 Ok(()) => {
                                                     // Download complete - save to default mods directory if configured
                                                     let config = config_clone.read().await;
-                                                    if let Some(ref default_dir) = config.tui.default_mod_directory {
-                                                        let expanded_dir = if default_dir.starts_with("~/") {
-                                                            std::env::var("HOME")
-                                                                .map(|h| format!("{}/{}", h, &default_dir[2..]))
-                                                                .unwrap_or_else(|_| default_dir.clone())
-                                                        } else {
-                                                            default_dir.clone()
-                                                        };
+                                                    if let Some(ref default_dir) =
+                                                        config.tui.default_mod_directory
+                                                    {
+                                                        let expanded_dir =
+                                                            if default_dir.starts_with("~/") {
+                                                                std::env::var("HOME")
+                                                                    .map(|h| {
+                                                                        format!(
+                                                                            "{}/{}",
+                                                                            h,
+                                                                            &default_dir[2..]
+                                                                        )
+                                                                    })
+                                                                    .unwrap_or_else(|_| {
+                                                                        default_dir.clone()
+                                                                    })
+                                                            } else {
+                                                                default_dir.clone()
+                                                            };
 
                                                         // Create directory if it doesn't exist
-                                                        if let Err(e) = std::fs::create_dir_all(&expanded_dir) {
+                                                        if let Err(e) =
+                                                            std::fs::create_dir_all(&expanded_dir)
+                                                        {
                                                             tracing::warn!("Failed to create default mods directory: {}", e);
                                                         } else {
                                                             // Copy archive to default directory
-                                                            let archive_dest = std::path::Path::new(&expanded_dir).join(&file_name);
-                                                            if let Err(e) = std::fs::copy(&dest_path, &archive_dest) {
+                                                            let archive_dest =
+                                                                std::path::Path::new(&expanded_dir)
+                                                                    .join(&file_name);
+                                                            if let Err(e) = std::fs::copy(
+                                                                &dest_path,
+                                                                &archive_dest,
+                                                            ) {
                                                                 tracing::warn!("Failed to copy archive to default directory: {}", e);
                                                             } else {
-                                                                tracing::info!("Saved archive to: {}", archive_dest.display());
+                                                                tracing::info!(
+                                                                    "Saved archive to: {}",
+                                                                    archive_dest.display()
+                                                                );
                                                             }
                                                         }
                                                     }
@@ -2923,11 +3140,15 @@ impl Tui {
                                                     {
                                                         let mut state = state_clone.write().await;
                                                         state.download_progress = None;
-                                                        state.set_status(format!("Downloaded! Installing {}...", file_name));
+                                                        state.set_status(format!(
+                                                            "Downloaded! Installing {}...",
+                                                            file_name
+                                                        ));
                                                     }
 
                                                     let game_id = ctx.game_domain.clone();
-                                                    let game_id_for_install = match game_id.as_str() {
+                                                    let game_id_for_install = match game_id.as_str()
+                                                    {
                                                         "skyrimspecialedition" => "skyrimse",
                                                         "fallout4" => "fallout4",
                                                         "starfield" => "starfield",
@@ -2986,12 +3207,17 @@ impl Tui {
                                                 Err(e) => {
                                                     let mut state = state_clone.write().await;
                                                     state.download_progress = None;
-                                                    state.set_status(format!("Download failed: {}", e));
+                                                    state.set_status(format!(
+                                                        "Download failed: {}",
+                                                        e
+                                                    ));
                                                 }
                                             }
                                         } else {
                                             let mut state = state_clone.write().await;
-                                            state.set_status("No download links available".to_string());
+                                            state.set_status(
+                                                "No download links available".to_string(),
+                                            );
                                         }
                                     }
                                     Err(e) => {
@@ -3001,7 +3227,10 @@ impl Tui {
                                         if err_msg.contains("Premium") || err_msg.contains("403") {
                                             state.set_status("⚠ Direct download requires Nexus Premium. Visit nexusmods.com to download manually, then use 'i' to install.".to_string());
                                         } else {
-                                            state.set_status(format!("Download link error: {}", err_msg));
+                                            state.set_status(format!(
+                                                "Download link error: {}",
+                                                err_msg
+                                            ));
                                         }
                                     }
                                 }
@@ -3073,7 +3302,9 @@ impl Tui {
 
                 // Build filtered mod list based on active category filter and search query
                 let search_lower = state.mod_search_query.to_lowercase();
-                let filtered_mods: Vec<&crate::mods::InstalledMod> = state.installed_mods.iter()
+                let filtered_mods: Vec<&crate::mods::InstalledMod> = state
+                    .installed_mods
+                    .iter()
                     .filter(|m| {
                         // Apply category filter
                         let category_match = if let Some(filter_id) = state.category_filter {
@@ -3127,7 +3358,9 @@ impl Tui {
                         drop(state);
                         self.refresh_mods(app).await?;
                         let mut state = app.state.write().await;
-                        state.set_status("Mod list refreshed (showing all installed mods)".to_string());
+                        state.set_status(
+                            "Mod list refreshed (showing all installed mods)".to_string(),
+                        );
                         return Ok(());
                     }
                     KeyCode::Char('v') => {
@@ -3246,20 +3479,27 @@ impl Tui {
                                     Ok(installer) => {
                                         if installer.requires_wizard() {
                                             // Initialize wizard
+                                            use crate::app::state::{
+                                                FomodWizardState, WizardPhase,
+                                            };
                                             use crate::mods::fomod::wizard::init_wizard_state;
-                                            use crate::app::state::{FomodWizardState, WizardPhase};
 
                                             let wizard = init_wizard_state(&installer.config);
 
                                             // Try to load previous choices
                                             let profile_id = None; // TODO: Get current profile ID
-                                            if let Ok(previous_plan) = app.db.get_fomod_choice(mod_id, profile_id) {
-                                                if let Some((config_hash, _plan_json)) = previous_plan {
+                                            if let Ok(previous_plan) =
+                                                app.db.get_fomod_choice(mod_id, profile_id)
+                                            {
+                                                if let Some((config_hash, _plan_json)) =
+                                                    previous_plan
+                                                {
                                                     // Check if config is still valid
                                                     use crate::mods::fomod::persistence::FomodChoiceManager;
                                                     let manager = FomodChoiceManager::new(&app.db);
                                                     // TODO: Restore previous selections if valid
-                                                    let _ = (config_hash, manager); // Suppress unused warnings for now
+                                                    let _ = (config_hash, manager);
+                                                    // Suppress unused warnings for now
                                                 }
                                             }
 
@@ -3280,10 +3520,16 @@ impl Tui {
                                             let mut state = app.state.write().await;
                                             state.fomod_wizard_state = Some(wizard_state);
                                             state.goto(crate::app::state::Screen::FomodWizard);
-                                            state.set_status(format!("Reconfiguring FOMOD for {}", mod_name));
+                                            state.set_status(format!(
+                                                "Reconfiguring FOMOD for {}",
+                                                mod_name
+                                            ));
                                         } else {
                                             let mut state = app.state.write().await;
-                                            state.set_status(format!("{} has simple FOMOD (no wizard needed)", mod_name));
+                                            state.set_status(format!(
+                                                "{} has simple FOMOD (no wizard needed)",
+                                                mod_name
+                                            ));
                                         }
                                     }
                                     Err(e) => {
@@ -3292,7 +3538,10 @@ impl Tui {
                                     }
                                 }
                             } else {
-                                state.set_status(format!("{} does not have a FOMOD installer", mod_name));
+                                state.set_status(format!(
+                                    "{} does not have a FOMOD installer",
+                                    mod_name
+                                ));
                             }
                         }
                     }
@@ -3330,8 +3579,10 @@ impl Tui {
                                 if let Err(e) = Self::run_bulk_install(
                                     state_clone.clone(),
                                     mods_clone,
-                                    &path_clone
-                                ).await {
+                                    &path_clone,
+                                )
+                                .await
+                                {
                                     let mut state = state_clone.write().await;
                                     state.set_status(format!("Bulk install error: {}", e));
                                     state.installation_progress = None;
@@ -3340,7 +3591,10 @@ impl Tui {
 
                             return Ok(());
                         } else {
-                            state.set_status("No default mod directory configured. Set it in Settings (F4)".to_string());
+                            state.set_status(
+                                "No default mod directory configured. Set it in Settings (F4)"
+                                    .to_string(),
+                            );
                         }
                     }
                     KeyCode::Char('R') => {
@@ -3355,7 +3609,9 @@ impl Tui {
                         };
 
                         // Set status and immediately drop the lock to avoid deadlock
-                        state.set_status("Rescanning mods directory (this may take a minute)...".to_string());
+                        state.set_status(
+                            "Rescanning mods directory (this may take a minute)...".to_string(),
+                        );
                         drop(state);
 
                         // Clone components AFTER dropping the lock
@@ -3433,27 +3689,32 @@ impl Tui {
                                     state_clone,
                                     nexus_clone,
                                     game_id,
-                                    None,  // No query = top mods
+                                    None, // No query = top mods
                                     crate::nexus::graphql::SortBy::Downloads,
                                     0,
                                     limit,
                                 );
                             }
                         } else {
-                            state.set_status("Browse requires Nexus API key. Set it in Settings (F4)".to_string());
+                            state.set_status(
+                                "Browse requires Nexus API key. Set it in Settings (F4)"
+                                    .to_string(),
+                            );
                         }
                     }
                     KeyCode::Char('o') => {
                         // Open Load Order screen
                         state.load_order_mods = state.installed_mods.clone();
-                        state.load_order_index = state.selected_mod_index.min(
-                            state.load_order_mods.len().saturating_sub(1),
-                        );
+                        state.load_order_index = state
+                            .selected_mod_index
+                            .min(state.load_order_mods.len().saturating_sub(1));
                         state.load_order_dirty = false;
                         state.reorder_mode = false;
                         // Load conflicts
                         if let Some(ref game) = state.active_game {
-                            if let Ok(conflicts) = crate::mods::get_conflicts_grouped(&app.db, &game.id) {
+                            if let Ok(conflicts) =
+                                crate::mods::get_conflicts_grouped(&app.db, &game.id)
+                            {
                                 state.load_order_conflicts = conflicts;
                             }
                         }
@@ -3474,7 +3735,8 @@ impl Tui {
 
                                 // Spawn update check in background
                                 tokio::spawn(async move {
-                                    match mods_clone.check_for_updates(&game_id, &nexus_clone).await {
+                                    match mods_clone.check_for_updates(&game_id, &nexus_clone).await
+                                    {
                                         Ok(updates) => {
                                             let mut state = state_clone.write().await;
                                             state.checking_updates = false;
@@ -3487,7 +3749,9 @@ impl Tui {
                                             state.available_updates = updates_map;
 
                                             if updates.is_empty() {
-                                                state.set_status("✓ All mods are up to date!".to_string());
+                                                state.set_status(
+                                                    "✓ All mods are up to date!".to_string(),
+                                                );
                                             } else {
                                                 state.set_status(format!(
                                                     "✨ {} mod update(s) available!",
@@ -3619,14 +3883,20 @@ impl Tui {
                                     let mut state = app.state.write().await;
                                     state.saved_modlists = lists;
                                     state.selected_saved_modlist_index = 0;
-                                    state.modlist_editor_mode = crate::app::state::ModlistEditorMode::ListPicker;
+                                    state.modlist_editor_mode =
+                                        crate::app::state::ModlistEditorMode::ListPicker;
                                     state.modlist_picker_for_loading = true;
                                     state.goto(Screen::ModlistEditor);
-                                    state.set_status_info("Select saved modlist to load, or press 'f' for file path");
+                                    state.set_status_info(
+                                        "Select saved modlist to load, or press 'f' for file path",
+                                    );
                                 }
                                 Err(e) => {
                                     let mut state = app.state.write().await;
-                                    state.set_status_error(format!("Failed to load saved modlists: {}", e));
+                                    state.set_status_error(format!(
+                                        "Failed to load saved modlists: {}",
+                                        e
+                                    ));
                                 }
                             }
                             return Ok(());
@@ -3641,13 +3911,18 @@ impl Tui {
                         } else {
                             // Find current category index
                             if let Some(current_id) = state.category_filter {
-                                if let Some(idx) = state.categories.iter().position(|c| c.id == Some(current_id)) {
+                                if let Some(idx) = state
+                                    .categories
+                                    .iter()
+                                    .position(|c| c.id == Some(current_id))
+                                {
                                     if idx == 0 {
                                         // Go to "All"
                                         state.category_filter = None;
                                     } else {
                                         // Go to previous category
-                                        state.category_filter = state.categories.get(idx - 1).and_then(|c| c.id);
+                                        state.category_filter =
+                                            state.categories.get(idx - 1).and_then(|c| c.id);
                                     }
                                     state.selected_mod_index = 0; // Reset selection
                                 }
@@ -3663,10 +3938,15 @@ impl Tui {
                         } else {
                             // Find current category index
                             if let Some(current_id) = state.category_filter {
-                                if let Some(idx) = state.categories.iter().position(|c| c.id == Some(current_id)) {
+                                if let Some(idx) = state
+                                    .categories
+                                    .iter()
+                                    .position(|c| c.id == Some(current_id))
+                                {
                                     // Go to next category if not at end
                                     if idx < state.categories.len() - 1 {
-                                        state.category_filter = state.categories.get(idx + 1).and_then(|c| c.id);
+                                        state.category_filter =
+                                            state.categories.get(idx + 1).and_then(|c| c.id);
                                         state.selected_mod_index = 0; // Reset selection
                                     }
                                 }
@@ -3682,14 +3962,20 @@ impl Tui {
 
                             // Simple category picker - cycle through categories
                             // For now, just assign the next category or None
-                            let mod_rec = app.db.get_mods_for_game(&app.active_game().await.unwrap().id)?
+                            let mod_rec = app
+                                .db
+                                .get_mods_for_game(&app.active_game().await.unwrap().id)?
                                 .into_iter()
                                 .find(|r| r.id == Some(mod_id));
 
                             if let Some(mod_rec) = mod_rec {
-                                let next_category_id = if let Some(current_cat) = mod_rec.category_id {
+                                let next_category_id = if let Some(current_cat) =
+                                    mod_rec.category_id
+                                {
                                     // Find next category
-                                    if let Some(idx) = categories.iter().position(|c| c.id == Some(current_cat)) {
+                                    if let Some(idx) =
+                                        categories.iter().position(|c| c.id == Some(current_cat))
+                                    {
                                         if idx < categories.len() - 1 {
                                             categories.get(idx + 1).and_then(|c| c.id)
                                         } else {
@@ -3708,7 +3994,8 @@ impl Tui {
 
                                 let mut state = app.state.write().await;
                                 let cat_name = if let Some(cat_id) = next_category_id {
-                                    categories.iter()
+                                    categories
+                                        .iter()
                                         .find(|c| c.id == Some(cat_id))
                                         .map(|c| c.name.as_str())
                                         .unwrap_or("Unknown")
@@ -3740,20 +4027,25 @@ impl Tui {
                                 // Update progress
                                 {
                                     let mut state = app.state.write().await;
-                                    state.categorization_progress = Some(crate::app::state::CategorizationProgress {
-                                        current_index: idx + 1,
-                                        total_mods: total,
-                                        current_mod_name: mod_record.name.clone(),
-                                        categorized_count: categorized,
-                                    });
+                                    state.categorization_progress =
+                                        Some(crate::app::state::CategorizationProgress {
+                                            current_index: idx + 1,
+                                            total_mods: total,
+                                            current_mod_name: mod_record.name.clone(),
+                                            categorized_count: categorized,
+                                        });
                                 }
 
                                 // Give UI time to render
                                 tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 
                                 // Categorize this mod
-                                let installed_mod: crate::mods::InstalledMod = mod_record.clone().into();
-                                if crate::mods::auto_categorize_mod(&app.db, &installed_mod).await.is_ok() {
+                                let installed_mod: crate::mods::InstalledMod =
+                                    mod_record.clone().into();
+                                if crate::mods::auto_categorize_mod(&app.db, &installed_mod)
+                                    .await
+                                    .is_ok()
+                                {
                                     categorized += 1;
                                 }
                             }
@@ -3780,7 +4072,9 @@ impl Tui {
                             drop(state);
 
                             // Get mods to categorize (only uncategorized)
-                            let mods_to_categorize: Vec<_> = app.db.get_mods_for_game(&game_id)?
+                            let mods_to_categorize: Vec<_> = app
+                                .db
+                                .get_mods_for_game(&game_id)?
                                 .into_iter()
                                 .filter(|m| m.category_id.is_none())
                                 .collect();
@@ -3793,20 +4087,25 @@ impl Tui {
                                 // Update progress
                                 {
                                     let mut state = app.state.write().await;
-                                    state.categorization_progress = Some(crate::app::state::CategorizationProgress {
-                                        current_index: idx + 1,
-                                        total_mods: total,
-                                        current_mod_name: mod_record.name.clone(),
-                                        categorized_count: categorized,
-                                    });
+                                    state.categorization_progress =
+                                        Some(crate::app::state::CategorizationProgress {
+                                            current_index: idx + 1,
+                                            total_mods: total,
+                                            current_mod_name: mod_record.name.clone(),
+                                            categorized_count: categorized,
+                                        });
                                 }
 
                                 // Give UI time to render
                                 tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 
                                 // Categorize this mod
-                                let installed_mod: crate::mods::InstalledMod = mod_record.clone().into();
-                                if crate::mods::auto_categorize_mod(&app.db, &installed_mod).await.is_ok() {
+                                let installed_mod: crate::mods::InstalledMod =
+                                    mod_record.clone().into();
+                                if crate::mods::auto_categorize_mod(&app.db, &installed_mod)
+                                    .await
+                                    .is_ok()
+                                {
                                     categorized += 1;
                                 }
                             }
@@ -3833,37 +4132,59 @@ impl Tui {
                                 if let Some(mod_id) = m.nexus_mod_id {
                                     let mod_name = m.name.clone();
                                     let game_info = state.active_game.as_ref().map(|g| {
-                                        (g.id.clone(), g.nexus_game_id.clone(), g.game_type.nexus_numeric_id())
+                                        (
+                                            g.id.clone(),
+                                            g.nexus_game_id.clone(),
+                                            g.game_type.nexus_numeric_id(),
+                                        )
                                     });
-                                    state.set_status(format!("Checking requirements for {}...", mod_name));
+                                    state.set_status(format!(
+                                        "Checking requirements for {}...",
+                                        mod_name
+                                    ));
                                     drop(state);
 
-                                    if let Some((game_id, game_domain, game_id_numeric)) = game_info {
+                                    if let Some((game_id, game_domain, game_id_numeric)) = game_info
+                                    {
                                         let state_clone = app.state.clone();
                                         let mods_clone = app.mods.clone();
                                         let nexus_clone = nexus.clone();
 
                                         // Check requirements in background
                                         tokio::spawn(async move {
-                                            match mods_clone.check_nexus_requirements(&game_id, mod_id, &nexus_clone).await {
+                                            match mods_clone
+                                                .check_nexus_requirements(
+                                                    &game_id,
+                                                    mod_id,
+                                                    &nexus_clone,
+                                                )
+                                                .await
+                                            {
                                                 Ok((missing, dlcs, installed_count)) => {
                                                     let mut state = state_clone.write().await;
 
                                                     use crate::app::state::RequirementsDialog;
-                                                    state.show_requirements = Some(RequirementsDialog {
-                                                        title: format!("Requirements for {}", mod_name),
-                                                        mod_name: mod_name.clone(),
-                                                        missing_mods: missing,
-                                                        dlc_requirements: dlcs,
-                                                        installed_count,
-                                                        selected_index: 0,
-                                                        game_domain,
-                                                        game_id_numeric,
-                                                    });
+                                                    state.show_requirements =
+                                                        Some(RequirementsDialog {
+                                                            title: format!(
+                                                                "Requirements for {}",
+                                                                mod_name
+                                                            ),
+                                                            mod_name: mod_name.clone(),
+                                                            missing_mods: missing,
+                                                            dlc_requirements: dlcs,
+                                                            installed_count,
+                                                            selected_index: 0,
+                                                            game_domain,
+                                                            game_id_numeric,
+                                                        });
                                                 }
                                                 Err(e) => {
                                                     let mut state = state_clone.write().await;
-                                                    state.set_status(format!("Failed to check requirements: {}", e));
+                                                    state.set_status(format!(
+                                                        "Failed to check requirements: {}",
+                                                        e
+                                                    ));
                                                 }
                                             }
                                         });
@@ -3892,10 +4213,15 @@ impl Tui {
                             let mods_clone = app.mods.clone();
 
                             tokio::spawn(async move {
-                                match mods_clone.update_missing_nexus_ids(&game_id, archive_dir.as_deref()).await {
+                                match mods_clone
+                                    .update_missing_nexus_ids(&game_id, archive_dir.as_deref())
+                                    .await
+                                {
                                     Ok(count) => {
                                         // Reload mods list to get updated Nexus IDs
-                                        if let Ok(updated_mods) = mods_clone.list_mods(&game_id).await {
+                                        if let Ok(updated_mods) =
+                                            mods_clone.list_mods(&game_id).await
+                                        {
                                             let mut state = state_clone.write().await;
                                             state.installed_mods = updated_mods;
                                             if count > 0 {
@@ -3906,7 +4232,10 @@ impl Tui {
                                         } else {
                                             let mut state = state_clone.write().await;
                                             if count > 0 {
-                                                state.set_status(format!("✓ Updated Nexus IDs for {} mod(s)", count));
+                                                state.set_status(format!(
+                                                    "✓ Updated Nexus IDs for {} mod(s)",
+                                                    count
+                                                ));
                                             } else {
                                                 state.set_status("No mods needed updating (all have Nexus IDs or couldn't parse)".to_string());
                                             }
@@ -3914,7 +4243,10 @@ impl Tui {
                                     }
                                     Err(e) => {
                                         let mut state = state_clone.write().await;
-                                        state.set_status(format!("Failed to update Nexus IDs: {}", e));
+                                        state.set_status(format!(
+                                            "Failed to update Nexus IDs: {}",
+                                            e
+                                        ));
                                     }
                                 }
                             });
@@ -3927,7 +4259,9 @@ impl Tui {
             Screen::Plugins => {
                 // Filter plugins by search query
                 let search_lower = state.plugin_search_query.to_lowercase();
-                let filtered_plugins: Vec<&crate::plugins::PluginInfo> = state.plugins.iter()
+                let filtered_plugins: Vec<&crate::plugins::PluginInfo> = state
+                    .plugins
+                    .iter()
                     .filter(|p| {
                         if search_lower.is_empty() {
                             true
@@ -3992,7 +4326,8 @@ impl Tui {
                                     p.load_order = i;
                                 }
                             }
-                        } else if plugin_count > 0 && state.selected_plugin_index < plugin_count - 1 {
+                        } else if plugin_count > 0 && state.selected_plugin_index < plugin_count - 1
+                        {
                             state.selected_plugin_index += 1;
                         }
                     }
@@ -4013,7 +4348,8 @@ impl Tui {
                                 }
                             }
                         } else {
-                            state.selected_plugin_index = state.selected_plugin_index.saturating_sub(5);
+                            state.selected_plugin_index =
+                                state.selected_plugin_index.saturating_sub(5);
                         }
                     }
                     KeyCode::Char('J') => {
@@ -4034,7 +4370,8 @@ impl Tui {
                             }
                         } else {
                             let max = plugin_count.saturating_sub(1);
-                            state.selected_plugin_index = (state.selected_plugin_index + 5).min(max);
+                            state.selected_plugin_index =
+                                (state.selected_plugin_index + 5).min(max);
                         }
                     }
                     KeyCode::Char('t') => {
@@ -4107,7 +4444,10 @@ impl Tui {
                                     filename
                                 ));
                             } else {
-                                state.set_status(format!("{}: {} (press 's' to save)", status, filename));
+                                state.set_status(format!(
+                                    "{}: {} (press 's' to save)",
+                                    status, filename
+                                ));
                             }
                         }
                     }
@@ -4117,7 +4457,10 @@ impl Tui {
                         for plugin in state.plugins.iter_mut() {
                             plugin.enabled = true;
                         }
-                        state.set_status(format!("Enabled all {} plugins (press 's' to save)", count));
+                        state.set_status(format!(
+                            "Enabled all {} plugins (press 's' to save)",
+                            count
+                        ));
                     }
                     KeyCode::Char('n') => {
                         // Disable all plugins
@@ -4125,20 +4468,22 @@ impl Tui {
                         for plugin in state.plugins.iter_mut() {
                             plugin.enabled = false;
                         }
-                        state.set_status(format!("Disabled all {} plugins (press 's' to save)", count));
+                        state.set_status(format!(
+                            "Disabled all {} plugins (press 's' to save)",
+                            count
+                        ));
                     }
                     KeyCode::Char('s') => {
                         // Save plugin load order
                         if let Some(game) = &state.active_game {
-                            let enabled: Vec<String> = state.plugins
+                            let enabled: Vec<String> = state
+                                .plugins
                                 .iter()
                                 .filter(|p| p.enabled)
                                 .map(|p| p.filename.clone())
                                 .collect();
-                            let all: Vec<String> = state.plugins
-                                .iter()
-                                .map(|p| p.filename.clone())
-                                .collect();
+                            let all: Vec<String> =
+                                state.plugins.iter().map(|p| p.filename.clone()).collect();
 
                             // Check if any enabled plugins are missing from Data folder
                             let mut missing_plugins = Vec::new();
@@ -4160,13 +4505,18 @@ impl Tui {
                             } else if let Err(e) = plugins::write_loadorder_txt(game, &all) {
                                 state.set_status(format!("Error saving loadorder.txt: {}", e));
                             } else {
-                                let skse_note = if enabled.iter().any(|p| p.to_lowercase().contains("skyui")) {
-                                    " NOTE: SkyUI requires SKSE - launch through skse64_loader!"
-                                } else {
-                                    ""
-                                };
+                                let skse_note =
+                                    if enabled.iter().any(|p| p.to_lowercase().contains("skyui")) {
+                                        " NOTE: SkyUI requires SKSE - launch through skse64_loader!"
+                                    } else {
+                                        ""
+                                    };
                                 state.plugin_dirty = false;
-                                state.set_status(format!("Saved {} enabled plugins.{}", enabled.len(), skse_note));
+                                state.set_status(format!(
+                                    "Saved {} enabled plugins.{}",
+                                    enabled.len(),
+                                    skse_note
+                                ));
                             }
                         }
                     }
@@ -4177,16 +4527,23 @@ impl Tui {
                             let mut plugins_to_sort = state.plugins.clone();
                             drop(state);
 
-                            match plugins::loot::sort_plugins_native(&game_id, &mut plugins_to_sort) {
+                            match plugins::loot::sort_plugins_native(&game_id, &mut plugins_to_sort)
+                            {
                                 Ok(_) => {
                                     // Validation
-                                    let issues = plugins::sort::validate_load_order(&plugins_to_sort, &game_id);
+                                    let issues = plugins::sort::validate_load_order(
+                                        &plugins_to_sort,
+                                        &game_id,
+                                    );
 
                                     let mut state = app.state.write().await;
                                     state.plugins = plugins_to_sort;
 
                                     if issues.is_empty() {
-                                        state.set_status("Native auto-sort complete! Press 's' to save.".to_string());
+                                        state.set_status(
+                                            "Native auto-sort complete! Press 's' to save."
+                                                .to_string(),
+                                        );
                                     } else {
                                         state.set_status(format!(
                                             "Auto-sort complete with {} warnings. Press 's' to save.",
@@ -4211,13 +4568,18 @@ impl Tui {
                             // Check if LOOT is available
                             if !plugins::loot::is_loot_available() {
                                 let mut state = app.state.write().await;
-                                state.set_status("LOOT CLI not installed. Use 'S' for native sort instead.".to_string());
+                                state.set_status(
+                                    "LOOT CLI not installed. Use 'S' for native sort instead."
+                                        .to_string(),
+                                );
                                 return Ok(());
                             }
 
                             // Run LOOT
                             let mut state = app.state.write().await;
-                            state.set_status("Running LOOT CLI... (this may take a moment)".to_string());
+                            state.set_status(
+                                "Running LOOT CLI... (this may take a moment)".to_string(),
+                            );
                             drop(state);
 
                             match plugins::loot::sort_plugins(&game_clone) {
@@ -4226,7 +4588,10 @@ impl Tui {
                                     if let Ok(plugins_list) = plugins::get_plugins(&game_clone) {
                                         let mut state = app.state.write().await;
                                         state.plugins = plugins_list;
-                                        state.set_status("LOOT CLI sorting complete! Plugins reloaded.".to_string());
+                                        state.set_status(
+                                            "LOOT CLI sorting complete! Plugins reloaded."
+                                                .to_string(),
+                                        );
                                     }
                                 }
                                 Err(e) => {
@@ -4316,7 +4681,8 @@ impl Tui {
                             }
                         }
                         KeyCode::Down | KeyCode::Char('j') => {
-                            if mod_count > 0 && state.selected_collection_mod_index < mod_count - 1 {
+                            if mod_count > 0 && state.selected_collection_mod_index < mod_count - 1
+                            {
                                 state.selected_collection_mod_index += 1;
                             }
                         }
@@ -4342,19 +4708,11 @@ impl Tui {
                         }
                     }
                     KeyCode::Char('l') => {
-                        if let Some(tool) = Self::settings_tool_for_index(state.selected_setting_index) {
-                            state.set_status(format!("Launching {}...", tool.display_name()));
+                        if let Some(tool) =
+                            Self::settings_tool_for_index(state.selected_setting_index)
+                        {
                             drop(state);
-                            match app.launch_external_tool(tool, &[]).await {
-                                Ok(code) => {
-                                    let mut state = app.state.write().await;
-                                    state.set_status(format!("{} exited with {}", tool.display_name(), code));
-                                }
-                                Err(e) => {
-                                    let mut state = app.state.write().await;
-                                    state.set_status(format!("Launch failed: {}", e));
-                                }
-                            }
+                            self.launch_external_tool_from_tui(app, tool).await?;
                             return Ok(());
                         }
                     }
@@ -4365,18 +4723,23 @@ impl Tui {
                                 // NexusMods API Key setting
                                 state.input_mode = InputMode::NexusApiKeyInput;
                                 let config = app.config.read().await;
-                                state.input_buffer = config.nexus_api_key
-                                    .clone()
-                                    .unwrap_or_default();
+                                state.input_buffer =
+                                    config.nexus_api_key.clone().unwrap_or_default();
                             }
                             1 => {
                                 // Cycle deployment method
                                 {
                                     let mut config = app.config.write().await;
                                     config.deployment.method = match config.deployment.method {
-                                        crate::config::DeploymentMethod::Symlink => crate::config::DeploymentMethod::Hardlink,
-                                        crate::config::DeploymentMethod::Hardlink => crate::config::DeploymentMethod::Copy,
-                                        crate::config::DeploymentMethod::Copy => crate::config::DeploymentMethod::Symlink,
+                                        crate::config::DeploymentMethod::Symlink => {
+                                            crate::config::DeploymentMethod::Hardlink
+                                        }
+                                        crate::config::DeploymentMethod::Hardlink => {
+                                            crate::config::DeploymentMethod::Copy
+                                        }
+                                        crate::config::DeploymentMethod::Copy => {
+                                            crate::config::DeploymentMethod::Symlink
+                                        }
                                     };
                                     if let Err(e) = config.save().await {
                                         state.set_status(format!("Error saving config: {}", e));
@@ -4392,14 +4755,19 @@ impl Tui {
                                 // Toggle backup originals
                                 {
                                     let mut config = app.config.write().await;
-                                    config.deployment.backup_originals = !config.deployment.backup_originals;
+                                    config.deployment.backup_originals =
+                                        !config.deployment.backup_originals;
                                     if let Err(e) = config.save().await {
                                         state.set_status(format!("Error saving config: {}", e));
                                         return Ok(());
                                     }
                                     state.set_status(format!(
                                         "Backup originals: {}",
-                                        if config.deployment.backup_originals { "enabled" } else { "disabled" }
+                                        if config.deployment.backup_originals {
+                                            "enabled"
+                                        } else {
+                                            "disabled"
+                                        }
                                     ));
                                 }
                             }
@@ -4407,25 +4775,22 @@ impl Tui {
                                 // Downloads Directory setting
                                 state.input_mode = InputMode::DownloadsDirectoryInput;
                                 let config = app.config.read().await;
-                                state.input_buffer = config.downloads_dir_override
-                                    .clone()
-                                    .unwrap_or_default();
+                                state.input_buffer =
+                                    config.downloads_dir_override.clone().unwrap_or_default();
                             }
                             4 => {
                                 // Staging Directory setting
                                 state.input_mode = InputMode::StagingDirectoryInput;
                                 let config = app.config.read().await;
-                                state.input_buffer = config.staging_dir_override
-                                    .clone()
-                                    .unwrap_or_default();
+                                state.input_buffer =
+                                    config.staging_dir_override.clone().unwrap_or_default();
                             }
                             5 => {
                                 // Default Mod Directory setting
                                 state.input_mode = InputMode::ModDirectoryInput;
                                 let config = app.config.read().await;
-                                state.input_buffer = config.tui.default_mod_directory
-                                    .clone()
-                                    .unwrap_or_default();
+                                state.input_buffer =
+                                    config.tui.default_mod_directory.clone().unwrap_or_default();
                             }
                             6 => {
                                 // Proton command
@@ -4435,16 +4800,16 @@ impl Tui {
                             }
                             9 | 10 | 11 | 12 | 13 | 14 | 15 => {
                                 // Tool executable paths
-                                let Some(tool) = Self::settings_tool_for_index(state.selected_setting_index) else {
+                                let Some(tool) =
+                                    Self::settings_tool_for_index(state.selected_setting_index)
+                                else {
                                     state.set_status("Invalid tool selection".to_string());
                                     return Ok(());
                                 };
                                 state.input_mode = InputMode::ExternalToolPathInput;
                                 let config = app.config.read().await;
-                                state.input_buffer = config
-                                    .external_tool_path(tool)
-                                    .unwrap_or("")
-                                    .to_string();
+                                state.input_buffer =
+                                    config.external_tool_path(tool).unwrap_or("").to_string();
                             }
                             7 => {
                                 // Cycle Proton runtime (custom -> auto -> detected runtimes)
@@ -4492,7 +4857,11 @@ impl Tui {
                                     }
                                     state.set_status(format!(
                                         "Minimal color mode: {}",
-                                        if config.tui.minimal_color_mode { "enabled" } else { "disabled" }
+                                        if config.tui.minimal_color_mode {
+                                            "enabled"
+                                        } else {
+                                            "disabled"
+                                        }
                                     ));
                                 }
                             }
@@ -4528,7 +4897,9 @@ impl Tui {
                         state.set_status(format!("Sort: {:?}", sort_mode));
 
                         // Re-search with new sort if we have results (query or default content)
-                        if (!state.browse_query.is_empty() || state.browse_showing_default) && app.nexus.is_some() {
+                        if (!state.browse_query.is_empty() || state.browse_showing_default)
+                            && app.nexus.is_some()
+                        {
                             let query = if state.browse_showing_default {
                                 None
                             } else {
@@ -4596,10 +4967,7 @@ impl Tui {
                         let state_clone = app.state.clone();
 
                         state.browsing = true;
-                        state.set_status(format!(
-                            "Loading page {}...",
-                            (next_offset / limit) + 1
-                        ));
+                        state.set_status(format!("Loading page {}...", (next_offset / limit) + 1));
                         drop(state);
 
                         Self::spawn_browse_search(
@@ -4647,10 +5015,7 @@ impl Tui {
                         let state_clone = app.state.clone();
 
                         state.browsing = true;
-                        state.set_status(format!(
-                            "Loading page {}...",
-                            (prev_offset / limit) + 1
-                        ));
+                        state.set_status(format!("Loading page {}...", (prev_offset / limit) + 1));
                         drop(state);
 
                         Self::spawn_browse_search(
@@ -4676,7 +5041,11 @@ impl Tui {
                     }
                     KeyCode::Enter => {
                         // Fetch files for selected mod and show file picker
-                        if let Some(result) = state.browse_results.get(state.selected_browse_index).cloned() {
+                        if let Some(result) = state
+                            .browse_results
+                            .get(state.selected_browse_index)
+                            .cloned()
+                        {
                             if let Some(ref game) = state.active_game {
                                 let game_numeric_id = game.game_type.nexus_numeric_id();
                                 let game_domain = game.nexus_game_id.clone();
@@ -4872,8 +5241,7 @@ impl Tui {
                             let mut state = app.state.write().await;
                             state.load_order_mods = state.installed_mods.clone();
                             state.load_order_dirty = false;
-                            if let Ok(conflicts) =
-                                crate::mods::get_conflicts_grouped(&app.db, gid)
+                            if let Ok(conflicts) = crate::mods::get_conflicts_grouped(&app.db, gid)
                             {
                                 state.load_order_conflicts = conflicts;
                             }
@@ -4931,11 +5299,15 @@ impl Tui {
                                 if let Some(nexus) = nexus {
                                     // Spawn import in background to avoid blocking UI
                                     tokio::spawn(async move {
-                                        use crate::import::ModlistImporter;
                                         use crate::app::state::ImportProgress;
+                                        use crate::import::ModlistImporter;
 
                                         let db_for_modlist = db_clone.clone();
-                                        let importer = ModlistImporter::with_catalog(&game.id, (*nexus).clone(), Some(db_clone));
+                                        let importer = ModlistImporter::with_catalog(
+                                            &game.id,
+                                            (*nexus).clone(),
+                                            Some(db_clone),
+                                        );
 
                                         // Progress callback to update UI
                                         let state_for_progress = state_clone.clone();
@@ -4954,33 +5326,66 @@ impl Tui {
                                             }
                                         };
 
-                                        match importer.import_modlist_with_progress(std::path::Path::new(&path), Some(progress_callback)).await {
+                                        match importer
+                                            .import_modlist_with_progress(
+                                                std::path::Path::new(&path),
+                                                Some(progress_callback),
+                                            )
+                                            .await
+                                        {
                                             Ok(result) => {
                                                 // Save modlist to DB for persistence
-                                                let modlist_name = Self::modlist_name_from_path(&path, "Imported Modlist");
-                                                let entries: Vec<crate::db::ModlistEntryRecord> = result.matches.iter().enumerate().map(|(i, m)| {
-                                                    crate::db::ModlistEntryRecord {
-                                                        id: None,
-                                                        modlist_id: 0,
-                                                        name: m.mod_name.clone(),
-                                                        nexus_mod_id: m.best_match.as_ref().map(|bm| bm.mod_id),
-                                                        plugin_name: Some(m.plugin.plugin_name.clone()),
-                                                        match_confidence: Some(m.confidence.score()),
-                                                        position: i as i32,
-                                                        enabled: true,
-                                                        author: m.best_match.as_ref().map(|bm| bm.author.clone()),
-                                                        version: m.best_match.as_ref().map(|bm| bm.version.clone()),
-                                                    }
-                                                }).collect();
+                                                let modlist_name = Self::modlist_name_from_path(
+                                                    &path,
+                                                    "Imported Modlist",
+                                                );
+                                                let entries: Vec<crate::db::ModlistEntryRecord> =
+                                                    result
+                                                        .matches
+                                                        .iter()
+                                                        .enumerate()
+                                                        .map(|(i, m)| {
+                                                            crate::db::ModlistEntryRecord {
+                                                                id: None,
+                                                                modlist_id: 0,
+                                                                name: m.mod_name.clone(),
+                                                                nexus_mod_id: m
+                                                                    .best_match
+                                                                    .as_ref()
+                                                                    .map(|bm| bm.mod_id),
+                                                                plugin_name: Some(
+                                                                    m.plugin.plugin_name.clone(),
+                                                                ),
+                                                                match_confidence: Some(
+                                                                    m.confidence.score(),
+                                                                ),
+                                                                position: i as i32,
+                                                                enabled: true,
+                                                                author: m
+                                                                    .best_match
+                                                                    .as_ref()
+                                                                    .map(|bm| bm.author.clone()),
+                                                                version: m
+                                                                    .best_match
+                                                                    .as_ref()
+                                                                    .map(|bm| bm.version.clone()),
+                                                            }
+                                                        })
+                                                        .collect();
 
-                                                if let Err(e) = db_for_modlist.upsert_modlist_with_entries(
-                                                    &game.id,
-                                                    &modlist_name,
-                                                    None,
-                                                    Some(&path),
-                                                    &entries,
-                                                ) {
-                                                    tracing::warn!("Failed to persist imported modlist: {}", e);
+                                                if let Err(e) = db_for_modlist
+                                                    .upsert_modlist_with_entries(
+                                                        &game.id,
+                                                        &modlist_name,
+                                                        None,
+                                                        Some(&path),
+                                                        &entries,
+                                                    )
+                                                {
+                                                    tracing::warn!(
+                                                        "Failed to persist imported modlist: {}",
+                                                        e
+                                                    );
                                                 }
 
                                                 let mut state = state_clone.write().await;
@@ -4989,7 +5394,10 @@ impl Tui {
                                                 state.selected_import_index = 0;
                                                 state.import_progress = None; // Clear progress
                                                 state.goto(Screen::ImportReview);
-                                                state.set_status(format!("Found {} plugins (saved to modlists)", count));
+                                                state.set_status(format!(
+                                                    "Found {} plugins (saved to modlists)",
+                                                    count
+                                                ));
                                             }
                                             Err(e) => {
                                                 let mut state = state_clone.write().await;
@@ -5036,35 +5444,38 @@ impl Tui {
 
                             let mut queue_position = 0;
                             for result in &results {
-                                let alternatives = result.alternatives.iter().map(|alt| {
-                                    crate::queue::QueueAlternative {
+                                let alternatives = result
+                                    .alternatives
+                                    .iter()
+                                    .map(|alt| crate::queue::QueueAlternative {
                                         mod_id: alt.mod_id,
                                         name: alt.name.clone(),
                                         summary: alt.summary.clone(),
                                         downloads: alt.downloads,
                                         score: alt.score,
                                         thumbnail_url: None,
-                                    }
-                                }).collect();
+                                    })
+                                    .collect();
 
-                                let (mod_name, nexus_mod_id, status) = if let Some(best_match) = &result.best_match {
-                                    (
-                                        best_match.name.clone(),
-                                        best_match.mod_id,
-                                        if result.confidence.is_high() {
-                                            crate::queue::QueueStatus::Matched
-                                        } else {
-                                            crate::queue::QueueStatus::NeedsReview
-                                        }
-                                    )
-                                } else {
-                                    // No match found - add entry with NeedsManual status
-                                    (
-                                        result.mod_name.clone(),
-                                        0,
-                                        crate::queue::QueueStatus::NeedsManual
-                                    )
-                                };
+                                let (mod_name, nexus_mod_id, status) =
+                                    if let Some(best_match) = &result.best_match {
+                                        (
+                                            best_match.name.clone(),
+                                            best_match.mod_id,
+                                            if result.confidence.is_high() {
+                                                crate::queue::QueueStatus::Matched
+                                            } else {
+                                                crate::queue::QueueStatus::NeedsReview
+                                            },
+                                        )
+                                    } else {
+                                        // No match found - add entry with NeedsManual status
+                                        (
+                                            result.mod_name.clone(),
+                                            0,
+                                            crate::queue::QueueStatus::NeedsManual,
+                                        )
+                                    };
 
                                 let entry = crate::queue::QueueEntry {
                                     id: 0,
@@ -5094,7 +5505,10 @@ impl Tui {
                             state.selected_queue_index = 0;
                             state.selected_queue_alternative_index = 0;
                             state.queue_processing = false;
-                            state.set_status(format!("Created queue with {} entries (batch: {})", queue_position, batch_id));
+                            state.set_status(format!(
+                                "Created queue with {} entries (batch: {})",
+                                queue_position, batch_id
+                            ));
 
                             // Load queue entries
                             if let Ok(entries) = queue_manager.get_batch(&batch_id) {
@@ -5110,12 +5524,13 @@ impl Tui {
                 match key {
                     KeyCode::Char('j') | KeyCode::Down => {
                         if let Some(review) = &state.modlist_review_data {
-                            state.selected_modlist_entry =
-                                (state.selected_modlist_entry + 1).min(review.needs_download.len().saturating_sub(1));
+                            state.selected_modlist_entry = (state.selected_modlist_entry + 1)
+                                .min(review.needs_download.len().saturating_sub(1));
                         }
                     }
                     KeyCode::Char('k') | KeyCode::Up => {
-                        state.selected_modlist_entry = state.selected_modlist_entry.saturating_sub(1);
+                        state.selected_modlist_entry =
+                            state.selected_modlist_entry.saturating_sub(1);
                     }
                     KeyCode::Enter => {
                         // Confirm and queue downloads
@@ -5127,7 +5542,10 @@ impl Tui {
                             } else {
                                 state.set_status("Queueing downloads...");
                                 drop(state);
-                                Self::spawn_queue_modlist_downloads(app.state.clone(), app.db.clone());
+                                Self::spawn_queue_modlist_downloads(
+                                    app.state.clone(),
+                                    app.db.clone(),
+                                );
                             }
                         }
                     }
@@ -5156,7 +5574,9 @@ impl Tui {
                     }
                     KeyCode::Left | KeyCode::Char('h') => {
                         if !state.is_advanced_mode() {
-                            state.set_status_info("Alternative cycling is in Advanced mode (press 'z')");
+                            state.set_status_info(
+                                "Alternative cycling is in Advanced mode (press 'z')",
+                            );
                             return Ok(());
                         }
                         if let Some(entry) = state.queue_entries.get(state.selected_queue_index) {
@@ -5172,7 +5592,9 @@ impl Tui {
                     }
                     KeyCode::Right | KeyCode::Char('l') => {
                         if !state.is_advanced_mode() {
-                            state.set_status_info("Alternative cycling is in Advanced mode (press 'z')");
+                            state.set_status_info(
+                                "Alternative cycling is in Advanced mode (press 'z')",
+                            );
                             return Ok(());
                         }
                         if let Some(entry) = state.queue_entries.get(state.selected_queue_index) {
@@ -5206,7 +5628,10 @@ impl Tui {
                                 QueueStatus::Matched,
                             ) {
                                 let mut state = app.state.write().await;
-                                state.set_status_error(format!("Failed to apply alternative: {}", e));
+                                state.set_status_error(format!(
+                                    "Failed to apply alternative: {}",
+                                    e
+                                ));
                                 return Ok(());
                             }
 
@@ -5215,7 +5640,8 @@ impl Tui {
                                     let mut state = app.state.write().await;
                                     state.queue_entries = entries;
                                     if !state.queue_entries.is_empty() {
-                                        state.selected_queue_index = selected_idx.min(state.queue_entries.len() - 1);
+                                        state.selected_queue_index =
+                                            selected_idx.min(state.queue_entries.len() - 1);
                                     } else {
                                         state.selected_queue_index = 0;
                                     }
@@ -5231,7 +5657,9 @@ impl Tui {
 
                         // No alternatives: prompt manual Nexus ID entry.
                         if !state.is_advanced_mode() {
-                            state.set_status_info("Manual Nexus ID entry is in Advanced mode (press 'z')");
+                            state.set_status_info(
+                                "Manual Nexus ID entry is in Advanced mode (press 'z')",
+                            );
                             return Ok(());
                         }
                         state.input_mode = InputMode::QueueManualModIdInput;
@@ -5275,7 +5703,8 @@ impl Tui {
                                         let monitor_batch = batch_for_task.clone();
                                         let monitor_handle = tokio::spawn(async move {
                                             use tokio::time::{sleep, Duration};
-                                            let queue_manager = crate::queue::QueueManager::new(monitor_db);
+                                            let queue_manager =
+                                                crate::queue::QueueManager::new(monitor_db);
                                             loop {
                                                 let should_continue = {
                                                     let state = monitor_state.read().await;
@@ -5285,16 +5714,20 @@ impl Tui {
                                                     break;
                                                 }
 
-                                                if let Ok(entries) = queue_manager.get_batch(&monitor_batch) {
+                                                if let Ok(entries) =
+                                                    queue_manager.get_batch(&monitor_batch)
+                                                {
                                                     let mut state = monitor_state.write().await;
-                                                    if state.import_batch_id.as_deref() == Some(monitor_batch.as_str()) {
+                                                    if state.import_batch_id.as_deref()
+                                                        == Some(monitor_batch.as_str())
+                                                    {
                                                         let selected = state.selected_queue_index;
                                                         state.queue_entries = entries;
                                                         if state.queue_entries.is_empty() {
                                                             state.selected_queue_index = 0;
                                                         } else {
-                                                            state.selected_queue_index =
-                                                                selected.min(state.queue_entries.len() - 1);
+                                                            state.selected_queue_index = selected
+                                                                .min(state.queue_entries.len() - 1);
                                                         }
                                                     }
                                                 }
@@ -5303,16 +5736,22 @@ impl Tui {
                                             }
                                         });
 
-                                        let result = processor.process_batch(&batch_for_task, false).await;
-                                        let queue_manager = crate::queue::QueueManager::new(db_for_task);
-                                        let refreshed = queue_manager.get_batch(&batch_for_task).unwrap_or_default();
+                                        let result =
+                                            processor.process_batch(&batch_for_task, false).await;
+                                        let queue_manager =
+                                            crate::queue::QueueManager::new(db_for_task);
+                                        let refreshed = queue_manager
+                                            .get_batch(&batch_for_task)
+                                            .unwrap_or_default();
                                         let mut state = state_for_task.write().await;
                                         state.queue_processing = false;
                                         state.queue_entries = refreshed;
                                         match result {
                                             Ok(_) => {
                                                 if state.is_advanced_mode() {
-                                                    state.set_status_success("Queue processing complete");
+                                                    state.set_status_success(
+                                                        "Queue processing complete",
+                                                    );
                                                 } else {
                                                     state.goto(Screen::Plugins);
                                                     state.set_status_success(
@@ -5322,7 +5761,10 @@ impl Tui {
                                             }
                                             Err(e) => {
                                                 tracing::error!("Queue processing error: {}", e);
-                                                state.set_status_error(format!("Queue processing failed: {}", e));
+                                                state.set_status_error(format!(
+                                                    "Queue processing failed: {}",
+                                                    e
+                                                ));
                                             }
                                         }
                                         monitor_handle.abort();
@@ -5393,7 +5835,9 @@ impl Tui {
                         let list_count = state.saved_modlists.len();
                         match key {
                             KeyCode::Down | KeyCode::Char('j') => {
-                                if list_count > 0 && state.selected_saved_modlist_index < list_count - 1 {
+                                if list_count > 0
+                                    && state.selected_saved_modlist_index < list_count - 1
+                                {
                                     state.selected_saved_modlist_index += 1;
                                 }
                             }
@@ -5404,7 +5848,9 @@ impl Tui {
                             }
                             KeyCode::Enter => {
                                 // Open selected modlist (editor mode) or load it (load mode)
-                                if let Some(ml) = state.saved_modlists.get(state.selected_saved_modlist_index) {
+                                if let Some(ml) =
+                                    state.saved_modlists.get(state.selected_saved_modlist_index)
+                                {
                                     let ml_id = ml.id.unwrap();
                                     let ml_name = ml.name.clone();
                                     let load_mode = state.modlist_picker_for_loading;
@@ -5428,7 +5874,9 @@ impl Tui {
                             }
                             KeyCode::Char('l') => {
                                 // Load selected saved modlist into review flow for queue creation
-                                if let Some(ml) = state.saved_modlists.get(state.selected_saved_modlist_index) {
+                                if let Some(ml) =
+                                    state.saved_modlists.get(state.selected_saved_modlist_index)
+                                {
                                     let ml_id = ml.id.unwrap();
                                     let ml_name = ml.name.clone();
                                     drop(state);
@@ -5443,13 +5891,20 @@ impl Tui {
                             }
                             KeyCode::Char('a') => {
                                 // Activate selected saved modlist and sync enabled states to installed mods
-                                if let Some(ml) = state.saved_modlists.get(state.selected_saved_modlist_index) {
+                                if let Some(ml) =
+                                    state.saved_modlists.get(state.selected_saved_modlist_index)
+                                {
                                     let ml_id = ml.id.unwrap();
                                     let ml_name = ml.name.clone();
                                     drop(state);
-                                    if let Err(e) = Self::activate_saved_modlist(app, ml_id, ml_name).await {
+                                    if let Err(e) =
+                                        Self::activate_saved_modlist(app, ml_id, ml_name).await
+                                    {
                                         let mut state = app.state.write().await;
-                                        state.set_status_error(format!("Failed to activate modlist: {}", e));
+                                        state.set_status_error(format!(
+                                            "Failed to activate modlist: {}",
+                                            e
+                                        ));
                                     }
                                     return Ok(());
                                 }
@@ -5470,7 +5925,9 @@ impl Tui {
                             }
                             KeyCode::Char('d') => {
                                 // Delete selected modlist
-                                if let Some(ml) = state.saved_modlists.get(state.selected_saved_modlist_index) {
+                                if let Some(ml) =
+                                    state.saved_modlists.get(state.selected_saved_modlist_index)
+                                {
                                     let ml_id = ml.id.unwrap();
                                     let ml_name = ml.name.clone();
                                     let game_id = state.active_game.as_ref().map(|g| g.id.clone());
@@ -5483,7 +5940,10 @@ impl Tui {
                                             let mut state = app.state.write().await;
                                             state.saved_modlists = lists;
                                             state.selected_saved_modlist_index = 0;
-                                            state.set_status_success(format!("Deleted modlist: {}", ml_name));
+                                            state.set_status_success(format!(
+                                                "Deleted modlist: {}",
+                                                ml_name
+                                            ));
                                         }
                                     }
                                     return Ok(());
@@ -5494,7 +5954,9 @@ impl Tui {
                                     return Ok(());
                                 }
                                 // Rename selected modlist
-                                if let Some(ml) = state.saved_modlists.get(state.selected_saved_modlist_index) {
+                                if let Some(ml) =
+                                    state.saved_modlists.get(state.selected_saved_modlist_index)
+                                {
                                     let name = ml.name.clone();
                                     let id = ml.id;
                                     state.input_mode = InputMode::ModlistNameInput;
@@ -5504,8 +5966,13 @@ impl Tui {
                             }
                             KeyCode::Char('x') => {
                                 // Export selected saved modlist
-                                if let Some(ml) = state.saved_modlists.get(state.selected_saved_modlist_index) {
-                                    let fallback = format!("~/{}_modlist.json", ml.name.replace(' ', "_").to_ascii_lowercase());
+                                if let Some(ml) =
+                                    state.saved_modlists.get(state.selected_saved_modlist_index)
+                                {
+                                    let fallback = format!(
+                                        "~/{}_modlist.json",
+                                        ml.name.replace(' ', "_").to_ascii_lowercase()
+                                    );
                                     state.modlist_export_id = ml.id;
                                     state.modlist_save_format = "native".to_string();
                                     state.input_mode = InputMode::SaveModlistPath;
@@ -5523,7 +5990,9 @@ impl Tui {
                         let entry_count = state.modlist_editor_entries.len();
                         match key {
                             KeyCode::Down | KeyCode::Char('j') => {
-                                if entry_count > 0 && state.selected_modlist_editor_index < entry_count - 1 {
+                                if entry_count > 0
+                                    && state.selected_modlist_editor_index < entry_count - 1
+                                {
                                     state.selected_modlist_editor_index += 1;
                                 }
                             }
@@ -5542,21 +6011,28 @@ impl Tui {
                                     state.modlist_editor_entries[idx].enabled = new_enabled;
                                     if let Some(eid) = entry_id {
                                         drop(state);
-                                        let _ = app.db.update_modlist_entry_enabled(eid, new_enabled);
+                                        let _ =
+                                            app.db.update_modlist_entry_enabled(eid, new_enabled);
                                         return Ok(());
                                     }
                                 }
                             }
                             KeyCode::Char('d') => {
                                 // Delete entry
-                                if let Some(entry) = state.modlist_editor_entries.get(state.selected_modlist_editor_index) {
+                                if let Some(entry) = state
+                                    .modlist_editor_entries
+                                    .get(state.selected_modlist_editor_index)
+                                {
                                     if let Some(entry_id) = entry.id {
                                         let idx = state.selected_modlist_editor_index;
                                         drop(state);
                                         let _ = app.db.delete_modlist_entry(entry_id);
                                         let mut state = app.state.write().await;
                                         state.modlist_editor_entries.remove(idx);
-                                        if state.selected_modlist_editor_index >= state.modlist_editor_entries.len() && state.selected_modlist_editor_index > 0 {
+                                        if state.selected_modlist_editor_index
+                                            >= state.modlist_editor_entries.len()
+                                            && state.selected_modlist_editor_index > 0
+                                        {
                                             state.selected_modlist_editor_index -= 1;
                                         }
                                         return Ok(());
@@ -5565,7 +6041,9 @@ impl Tui {
                             }
                             KeyCode::Char('J') => {
                                 // Move entry down
-                                if entry_count > 0 && state.selected_modlist_editor_index < entry_count - 1 {
+                                if entry_count > 0
+                                    && state.selected_modlist_editor_index < entry_count - 1
+                                {
                                     let idx = state.selected_modlist_editor_index;
                                     state.modlist_editor_entries.swap(idx, idx + 1);
                                     // Update positions in DB
@@ -5574,10 +6052,14 @@ impl Tui {
                                         state.modlist_editor_entries[idx + 1].id,
                                     ) {
                                         state.modlist_editor_entries[idx].position = idx as i32;
-                                        state.modlist_editor_entries[idx + 1].position = (idx + 1) as i32;
+                                        state.modlist_editor_entries[idx + 1].position =
+                                            (idx + 1) as i32;
                                         drop(state);
-                                        let _ = app.db.update_modlist_entry_position(id_a, idx as i32);
-                                        let _ = app.db.update_modlist_entry_position(id_b, (idx + 1) as i32);
+                                        let _ =
+                                            app.db.update_modlist_entry_position(id_a, idx as i32);
+                                        let _ = app
+                                            .db
+                                            .update_modlist_entry_position(id_b, (idx + 1) as i32);
                                         let mut state = app.state.write().await;
                                         state.selected_modlist_editor_index = idx + 1;
                                         return Ok(());
@@ -5596,10 +6078,14 @@ impl Tui {
                                         state.modlist_editor_entries[idx - 1].id,
                                     ) {
                                         state.modlist_editor_entries[idx].position = idx as i32;
-                                        state.modlist_editor_entries[idx - 1].position = (idx - 1) as i32;
+                                        state.modlist_editor_entries[idx - 1].position =
+                                            (idx - 1) as i32;
                                         drop(state);
-                                        let _ = app.db.update_modlist_entry_position(id_a, idx as i32);
-                                        let _ = app.db.update_modlist_entry_position(id_b, (idx - 1) as i32);
+                                        let _ =
+                                            app.db.update_modlist_entry_position(id_a, idx as i32);
+                                        let _ = app
+                                            .db
+                                            .update_modlist_entry_position(id_b, (idx - 1) as i32);
                                         let mut state = app.state.write().await;
                                         state.selected_modlist_editor_index = idx - 1;
                                         return Ok(());
@@ -5616,9 +6102,14 @@ impl Tui {
                             KeyCode::Char('s') => {
                                 if let Some(modlist_id) = state.active_modlist_id {
                                     drop(state);
-                                    if let Err(e) = Self::reload_modlist_editor_data(app, modlist_id).await {
+                                    if let Err(e) =
+                                        Self::reload_modlist_editor_data(app, modlist_id).await
+                                    {
                                         let mut state = app.state.write().await;
-                                        state.set_status_error(format!("Save/refresh failed: {}", e));
+                                        state.set_status_error(format!(
+                                            "Save/refresh failed: {}",
+                                            e
+                                        ));
                                     } else {
                                         let mut state = app.state.write().await;
                                         state.set_status_success("Modlist changes saved");
@@ -5628,15 +6119,22 @@ impl Tui {
                             }
                             KeyCode::Char('a') => {
                                 if let Some(modlist_id) = state.active_modlist_id {
-                                    let modlist_name = state.saved_modlists
+                                    let modlist_name = state
+                                        .saved_modlists
                                         .iter()
                                         .find(|ml| ml.id == Some(modlist_id))
                                         .map(|ml| ml.name.clone())
                                         .unwrap_or_else(|| "modlist".to_string());
                                     drop(state);
-                                    if let Err(e) = Self::activate_saved_modlist(app, modlist_id, modlist_name).await {
+                                    if let Err(e) =
+                                        Self::activate_saved_modlist(app, modlist_id, modlist_name)
+                                            .await
+                                    {
                                         let mut state = app.state.write().await;
-                                        state.set_status_error(format!("Failed to activate modlist: {}", e));
+                                        state.set_status_error(format!(
+                                            "Failed to activate modlist: {}",
+                                            e
+                                        ));
                                     }
                                     return Ok(());
                                 }
@@ -5644,7 +6142,8 @@ impl Tui {
                             KeyCode::Char('i') => {
                                 if let Some(modlist_id) = state.active_modlist_id {
                                     drop(state);
-                                    match Self::add_installed_mods_to_modlist(app, modlist_id).await {
+                                    match Self::add_installed_mods_to_modlist(app, modlist_id).await
+                                    {
                                         Ok((added, skipped)) => {
                                             let mut state = app.state.write().await;
                                             state.set_status_success(format!(
@@ -5654,7 +6153,10 @@ impl Tui {
                                         }
                                         Err(e) => {
                                             let mut state = app.state.write().await;
-                                            state.set_status_error(format!("Add installed mods failed: {}", e));
+                                            state.set_status_error(format!(
+                                                "Add installed mods failed: {}",
+                                                e
+                                            ));
                                         }
                                     }
                                     return Ok(());
@@ -5680,7 +6182,8 @@ impl Tui {
                             }
                             KeyCode::Char('x') => {
                                 if let Some(modlist_id) = state.active_modlist_id {
-                                    let modlist_name = state.saved_modlists
+                                    let modlist_name = state
+                                        .saved_modlists
                                         .iter()
                                         .find(|ml| ml.id == Some(modlist_id))
                                         .map(|ml| ml.name.clone())
@@ -5725,7 +6228,9 @@ impl Tui {
                     }
                     KeyCode::Char('?') => {
                         // Show help
-                        state.set_status("j/k=navigate, Space=select, Enter=next, b=back, p=preview, Esc=cancel");
+                        state.set_status(
+                            "j/k=navigate, Space=select, Enter=next, b=back, p=preview, Esc=cancel",
+                        );
                     }
                     KeyCode::Enter => {
                         // Handle phase-specific enter action
@@ -5744,13 +6249,24 @@ impl Tui {
                                     let step = &config.install_steps.steps[current_step];
                                     let mut all_valid = true;
 
-                                    for (group_idx, group) in step.groups.groups.iter().enumerate() {
+                                    for (group_idx, group) in step.groups.groups.iter().enumerate()
+                                    {
                                         let key = (current_step, group_idx);
-                                        let selections = wizard_state.wizard.selections.get(&key)
+                                        let selections = wizard_state
+                                            .wizard
+                                            .selections
+                                            .get(&key)
                                             .cloned()
                                             .unwrap_or_default();
 
-                                        if validate_group(group, &selections, current_step, group_idx).is_err() {
+                                        if validate_group(
+                                            group,
+                                            &selections,
+                                            current_step,
+                                            group_idx,
+                                        )
+                                        .is_err()
+                                        {
                                             all_valid = false;
                                             break;
                                         }
@@ -5763,7 +6279,8 @@ impl Tui {
                                 }
 
                                 // Move to next step or summary
-                                if wizard_state.current_step + 1 < config.install_steps.steps.len() {
+                                if wizard_state.current_step + 1 < config.install_steps.steps.len()
+                                {
                                     wizard_state.current_step += 1;
                                     wizard_state.current_group = 0;
                                     wizard_state.selected_option = 0;
@@ -5783,7 +6300,9 @@ impl Tui {
                                 let existing_mod_id = wizard_state.existing_mod_id;
 
                                 // Get nexus IDs from existing mod if reconfiguring
-                                let (nexus_mod_id, nexus_file_id) = if let Some(mod_id) = existing_mod_id {
+                                let (nexus_mod_id, nexus_file_id) = if let Some(mod_id) =
+                                    existing_mod_id
+                                {
                                     if let Ok(Some(existing_mod)) = app.db.get_mod_by_id(mod_id) {
                                         (existing_mod.nexus_mod_id, existing_mod.nexus_file_id)
                                     } else {
@@ -5810,12 +6329,19 @@ impl Tui {
                                 drop(state);
 
                                 // Execute FOMOD installation
-                                match app.mods.complete_fomod_install(&fomod_context, &wizard, None).await {
+                                match app
+                                    .mods
+                                    .complete_fomod_install(&fomod_context, &wizard, None)
+                                    .await
+                                {
                                     Ok(installed) => {
                                         self.refresh_mods(app).await?;
                                         let mut state = app.state.write().await;
                                         state.goto(Screen::Mods);
-                                        state.set_status(format!("Successfully installed: {}", installed.name));
+                                        state.set_status(format!(
+                                            "Successfully installed: {}",
+                                            installed.name
+                                        ));
                                     }
                                     Err(e) => {
                                         let mut state = app.state.write().await;
@@ -5846,7 +6372,8 @@ impl Tui {
                             }
                             WizardPhase::Summary => {
                                 wizard_state.phase = WizardPhase::StepNavigation;
-                                wizard_state.current_step = wizard_state.installer.config.install_steps.steps.len() - 1;
+                                wizard_state.current_step =
+                                    wizard_state.installer.config.install_steps.steps.len() - 1;
                             }
                             WizardPhase::Confirm => {
                                 wizard_state.phase = WizardPhase::Summary;
@@ -5867,7 +6394,9 @@ impl Tui {
 
                                 if current_group < step.groups.groups.len() {
                                     let group = &step.groups.groups[current_group];
-                                    if wizard_state.selected_option + 1 < group.plugins.plugins.len() {
+                                    if wizard_state.selected_option + 1
+                                        < group.plugins.plugins.len()
+                                    {
                                         wizard_state.selected_option += 1;
                                     }
                                 }
@@ -5945,7 +6474,10 @@ impl Tui {
                     KeyCode::Char('p') => {
                         // Preview (currently just show status)
                         let wizard_state = state.fomod_wizard_state.as_ref().unwrap();
-                        let selection_count: usize = wizard_state.wizard.selections.values()
+                        let selection_count: usize = wizard_state
+                            .wizard
+                            .selections
+                            .values()
                             .map(|s| s.len())
                             .sum();
                         state.set_status(format!("{} options selected", selection_count));
@@ -6001,7 +6533,8 @@ impl Tui {
 
                     let mut state = app.state.write().await;
                     if stats.mods_deployed == 0 {
-                        state.set_status("✓ Game restored to factory state (all mod files removed)");
+                        state
+                            .set_status("✓ Game restored to factory state (all mod files removed)");
                     } else {
                         state.set_status(format!(
                             "Deployed {} files from {} mods",
@@ -6063,9 +6596,8 @@ impl Tui {
             let mut state = app.state.write().await;
             state.installed_mods = mods;
             if !state.installed_mods.is_empty() {
-                state.selected_mod_index = state
-                    .selected_mod_index
-                    .min(state.installed_mods.len() - 1);
+                state.selected_mod_index =
+                    state.selected_mod_index.min(state.installed_mods.len() - 1);
             } else {
                 state.selected_mod_index = 0;
             }
@@ -6079,9 +6611,8 @@ impl Tui {
                 let mut state = app.state.write().await;
                 state.plugins = plugins_list;
                 if !state.plugins.is_empty() {
-                    state.selected_plugin_index = state
-                        .selected_plugin_index
-                        .min(state.plugins.len() - 1);
+                    state.selected_plugin_index =
+                        state.selected_plugin_index.min(state.plugins.len() - 1);
                 } else {
                     state.selected_plugin_index = 0;
                 }
@@ -6119,7 +6650,11 @@ impl Tui {
 
             {
                 let mut state = app.state.write().await;
-                state.set_status(format!("Installing {} components from {}...", selected_components.len(), mod_name));
+                state.set_status(format!(
+                    "Installing {} components from {}...",
+                    selected_components.len(),
+                    mod_name
+                ));
             }
 
             // For now, we'll copy selected component files to a temporary staging directory
@@ -6132,7 +6667,10 @@ impl Tui {
 
             // Copy selected components
             for component in &selected_components {
-                if let Ok(entries) = walkdir::WalkDir::new(&component.path).into_iter().collect::<std::result::Result<Vec<_>, _>>() {
+                if let Ok(entries) = walkdir::WalkDir::new(&component.path)
+                    .into_iter()
+                    .collect::<std::result::Result<Vec<_>, _>>()
+                {
                     for entry in entries {
                         if entry.file_type().is_file() {
                             if let Ok(rel_path) = entry.path().strip_prefix(&component.path) {
@@ -6230,25 +6768,48 @@ impl Tui {
 
         if archives.is_empty() {
             let mut st = state.write().await;
-            st.set_status(format!("No mod archives (.zip, .7z, .rar) found in: {}", directory));
+            st.set_status(format!(
+                "No mod archives (.zip, .7z, .rar) found in: {}",
+                directory
+            ));
             return Ok(());
         }
 
         // Show starting message
         {
             let mut st = state.write().await;
-            st.set_status(format!("Starting bulk install: {} archives found in {}", archives.len(), directory));
+            if st.bulk_install_running {
+                st.set_status("Bulk install is already running".to_string());
+                return Ok(());
+            }
+            st.bulk_install_running = true;
+            st.bulk_install_cancel_requested = false;
+            st.set_status(format!(
+                "Starting bulk install: {} archives found in {}",
+                archives.len(),
+                directory
+            ));
         }
 
         let total = archives.len();
         let mut installed = 0;
         let mut failed = 0;
         let mut skipped = 0;
+        let mut cancelled = false;
 
         // Install each archive
         for (idx, entry) in archives.iter().enumerate() {
+            {
+                let st = state.read().await;
+                if st.bulk_install_cancel_requested {
+                    cancelled = true;
+                    break;
+                }
+            }
+
             let archive_path = entry.path();
-            let filename = archive_path.file_name()
+            let filename = archive_path
+                .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("unknown");
 
@@ -6258,100 +6819,69 @@ impl Tui {
             let current_index = idx + 1;
             let total_mods = total;
 
-            let progress_callback = std::sync::Arc::new(move |current_file: String, processed: usize, total_files: usize| {
-                // Use try_write to avoid blocking within the async runtime
-                if let Ok(mut st) = state_clone.try_write() {
-                    let percent = if total_files > 0 {
-                        ((processed as f64 / total_files as f64) * 100.0) as u16
-                    } else {
-                        0
-                    };
+            let progress_callback = std::sync::Arc::new(
+                move |current_file: String, processed: usize, total_files: usize| {
+                    // Use try_write to avoid blocking within the async runtime
+                    if let Ok(mut st) = state_clone.try_write() {
+                        let percent = if total_files > 0 {
+                            ((processed as f64 / total_files as f64) * 100.0) as u16
+                        } else {
+                            0
+                        };
 
-                    st.installation_progress = Some(crate::app::state::InstallProgress {
-                        percent,
-                        current_file,
-                        total_files,
-                        processed_files: processed,
-                        // Bulk install context
-                        current_mod_name: Some(filename_clone.clone()),
-                        current_mod_index: Some(current_index),
-                        total_mods: Some(total_mods),
-                    });
-                }
-            });
+                        st.installation_progress = Some(crate::app::state::InstallProgress {
+                            percent,
+                            current_file,
+                            total_files,
+                            processed_files: processed,
+                            // Bulk install context
+                            current_mod_name: Some(filename_clone.clone()),
+                            current_mod_index: Some(current_index),
+                            total_mods: Some(total_mods),
+                        });
+                    }
+                },
+            );
 
             // Install
-            match mods.install_from_archive(
-                game_id,
-                archive_path.to_str().unwrap(),
-                Some(progress_callback),
-                None, // No Nexus ID for bulk installs
-                None,
-                None,
-            ).await {
+            match mods
+                .install_from_archive(
+                    game_id,
+                    archive_path.to_str().unwrap(),
+                    Some(progress_callback),
+                    None, // No Nexus ID for bulk installs
+                    None,
+                    None,
+                )
+                .await
+            {
                 Ok(crate::mods::InstallResult::Completed(installed_mod)) => {
                     installed += 1;
                     tracing::info!("[{}/{}] Installed: {}", idx + 1, total, installed_mod.name);
-
-                    // Check for missing requirements
-                    match mods.check_requirements(game_id, &installed_mod.name).await {
-                        Ok(missing) if !missing.is_empty() => {
-                            let req_list: Vec<String> = missing.iter()
-                                .map(|(req, plugin)| format!("{} (required by {})", req, plugin))
-                                .collect();
-                            tracing::warn!(
-                                "[{}/{}] {} installed but missing requirements: {}",
-                                idx + 1, total, installed_mod.name, req_list.join(", ")
-                            );
-
-                            // Show warning briefly
-                            {
-                                let mut st = state.write().await;
-                                if let Some(ref mut progress) = st.installation_progress {
-                                    progress.percent = 100;
-                                    progress.current_file = format!(
-                                        "⚠ {}: Missing {} requirement(s)",
-                                        installed_mod.name,
-                                        missing.len()
-                                    );
-                                }
-                            }
-                            tokio::time::sleep(tokio::time::Duration::from_millis(800)).await;
-                        }
-                        Ok(_) => {
-                            // No missing requirements - show success
-                            {
-                                let mut st = state.write().await;
-                                if let Some(ref mut progress) = st.installation_progress {
-                                    progress.percent = 100;
-                                    progress.current_file = format!("✓ Completed: {}", installed_mod.name);
-                                }
-                            }
-                            tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
-                        }
-                        Err(e) => {
-                            tracing::debug!("Could not check requirements: {}", e);
-                            // Show success anyway
-                            {
-                                let mut st = state.write().await;
-                                if let Some(ref mut progress) = st.installation_progress {
-                                    progress.percent = 100;
-                                    progress.current_file = format!("✓ Completed: {}", installed_mod.name);
-                                }
-                            }
-                            tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+                    {
+                        let mut st = state.write().await;
+                        if let Some(ref mut progress) = st.installation_progress {
+                            progress.percent = 100;
+                            progress.current_file = format!("✓ Completed: {}", installed_mod.name);
                         }
                     }
+                    tokio::time::sleep(tokio::time::Duration::from_millis(220)).await;
                 }
                 Ok(crate::mods::InstallResult::RequiresWizard(_context)) => {
                     // Skip FOMOD wizards in bulk install
                     skipped += 1;
-                    tracing::warn!("[{}/{}] Skipped: {} requires FOMOD wizard", idx + 1, total, filename);
+                    tracing::warn!(
+                        "[{}/{}] Skipped: {} requires FOMOD wizard",
+                        idx + 1,
+                        total,
+                        filename
+                    );
 
                     {
                         let mut st = state.write().await;
                         if let Some(ref mut progress) = st.installation_progress {
-                            progress.current_file = format!("⊘ Skipped: {} (needs wizard)", filename);
+                            progress.current_file =
+                                format!("⊘ Skipped: {} (needs wizard)", filename);
                         }
                     }
                     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
@@ -6359,7 +6889,13 @@ impl Tui {
                 Err(e) => {
                     failed += 1;
                     let error_msg = format!("{}", e);
-                    tracing::error!("[{}/{}] Failed to install {}: {}", idx + 1, total, filename, error_msg);
+                    tracing::error!(
+                        "[{}/{}] Failed to install {}: {}",
+                        idx + 1,
+                        total,
+                        filename,
+                        error_msg
+                    );
 
                     // Show error briefly before moving to next mod
                     {
@@ -6377,19 +6913,29 @@ impl Tui {
         {
             let mut st = state.write().await;
             st.installation_progress = None;
+            st.bulk_install_running = false;
+            st.bulk_install_cancel_requested = false;
 
             // Reload mods list
             if let Ok(updated_mods) = mods.list_mods(game_id).await {
                 st.installed_mods = updated_mods;
             }
 
-            let summary = if failed > 0 || skipped > 0 {
+            let summary = if cancelled {
+                format!(
+                    "⊘ Bulk install cancelled: {} installed, {} skipped, {} failed",
+                    installed, skipped, failed
+                )
+            } else if failed > 0 || skipped > 0 {
                 format!(
                     "✓ Bulk install complete: {} installed, {} skipped, {} failed (check logs for details)",
                     installed, skipped, failed
                 )
             } else {
-                format!("✓ Bulk install complete: {} mods installed successfully!", installed)
+                format!(
+                    "✓ Bulk install complete: {} mods installed successfully!",
+                    installed
+                )
             };
 
             st.set_status(summary);
@@ -6436,7 +6982,8 @@ impl Tui {
             Err(_) => Vec::new(),
         };
 
-        let installed_mod_ids: Vec<i64> = installed_mods.iter()
+        let installed_mod_ids: Vec<i64> = installed_mods
+            .iter()
             .filter_map(|m| m.nexus_mod_id)
             .collect();
 
@@ -6464,7 +7011,11 @@ impl Tui {
         for installed_mod in &installed_mods {
             if let Some(nexus_id) = installed_mod.nexus_mod_id {
                 // Check if this mod is in the collection
-                if collection.mods.iter().any(|cm| cm.source.mod_id == nexus_id) {
+                if collection
+                    .mods
+                    .iter()
+                    .any(|cm| cm.source.mod_id == nexus_id)
+                {
                     if let Err(e) = app.mods.enable_mod(&game_id, &installed_mod.name).await {
                         tracing::warn!("Failed to enable mod {}: {}", installed_mod.name, e);
                     } else {

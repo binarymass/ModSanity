@@ -74,7 +74,9 @@ impl FileEntry {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum Tag {
-    Simple { name: String },
+    Simple {
+        name: String,
+    },
     Conditional {
         name: String,
         condition: String,
@@ -152,10 +154,7 @@ pub struct MessageContent {
 #[serde(untagged)]
 pub enum Location {
     Simple(String),
-    Complex {
-        link: String,
-        name: Option<String>,
-    },
+    Complex { link: String, name: Option<String> },
 }
 
 /// Bash tag
@@ -171,8 +170,8 @@ pub fn load_masterlist(path: &Path) -> Result<Masterlist> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read masterlist at {}", path.display()))?;
 
-    let masterlist: Masterlist = serde_yaml::from_str(&content)
-        .context("Failed to parse masterlist YAML")?;
+    let masterlist: Masterlist =
+        serde_yaml::from_str(&content).context("Failed to parse masterlist YAML")?;
 
     Ok(masterlist)
 }
@@ -225,14 +224,14 @@ pub fn get_requirements(
 }
 
 /// Get group for a plugin (default, early loaders, late loaders, etc.)
-pub fn get_group(
-    plugin_name: &str,
-    metadata_map: &HashMap<String, PluginMetadata>,
-) -> String {
+pub fn get_group(plugin_name: &str, metadata_map: &HashMap<String, PluginMetadata>) -> String {
     let key = plugin_name.to_lowercase();
 
     if let Some(metadata) = metadata_map.get(&key) {
-        metadata.group.clone().unwrap_or_else(|| "default".to_string())
+        metadata
+            .group
+            .clone()
+            .unwrap_or_else(|| "default".to_string())
     } else {
         "default".to_string()
     }

@@ -232,10 +232,7 @@ impl FomodExecutor {
                 .execute_single_operation(operation, tmp_dir)
                 .await
                 .with_context(|| {
-                    format!(
-                        "Failed to execute operation for {:?}",
-                        operation.source
-                    )
+                    format!("Failed to execute operation for {:?}", operation.source)
                 })?;
 
             files_installed += files;

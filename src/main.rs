@@ -5,7 +5,11 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(Parser)]
 #[command(name = "modsanity")]
-#[command(author, version = "0.1.7", about = "A CLI/TUI mod manager for Bethesda games on Linux")]
+#[command(
+    author,
+    version = "0.1.7",
+    about = "A CLI/TUI mod manager for Bethesda games on Linux"
+)]
 struct Cli {
     /// Run in non-interactive mode
     #[arg(short, long)]
@@ -353,7 +357,7 @@ enum ToolCommands {
     },
 }
 
-fn setup_logging(verbosity: u8) {
+fn setup_logging(verbosity: u8, also_stderr: bool) {
     let filter = match verbosity {
         0 => "modsanity=info",
         1 => "modsanity=debug",
@@ -376,23 +380,35 @@ fn setup_logging(verbosity: u8) {
         .open(log_file)
         .expect("Failed to open log file");
 
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| filter.into()),
-        )
-        .with(
-            tracing_subscriber::fmt::layer()
-                .with_target(false)
-                .with_writer(std::sync::Arc::new(file))
-        )
-        .init();
+    let env_filter =
+        tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| filter.into());
+    let file_layer = tracing_subscriber::fmt::layer()
+        .with_target(false)
+        .with_writer(std::sync::Arc::new(file));
+
+    if also_stderr {
+        tracing_subscriber::registry()
+            .with(env_filter)
+            .with(file_layer)
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .with_target(false)
+                    .with_writer(std::io::stderr),
+            )
+            .init();
+    } else {
+        tracing_subscriber::registry()
+            .with(env_filter)
+            .with(file_layer)
+            .init();
+    }
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
-    setup_logging(cli.verbose);
+    let is_tui = matches!(cli.command, Some(Commands::Tui) | None);
+    setup_logging(cli.verbose, !is_tui);
 
     // Load configuration
     let mut config = Config::load().await?;
@@ -406,6 +422,7 @@ async fn main() -> Result<()> {
 
     // Initialize app
     let mut app = App::new(config).await?;
+    app.set_cli_verbosity(cli.verbose);
 
     match cli.command {
         Some(Commands::Tui) | None => {
@@ -417,8 +434,14 @@ async fn main() -> Result<()> {
             GameCommands::Scan => app.cmd_game_scan().await?,
             GameCommands::Select { name } => app.cmd_game_select(&name).await?,
             GameCommands::Info => app.cmd_game_info().await?,
-            GameCommands::AddPath { game_id, path, platform, proton_prefix } => {
-                app.cmd_game_add_path(&game_id, &path, &platform, proton_prefix.as_deref()).await?
+            GameCommands::AddPath {
+                game_id,
+                path,
+                platform,
+                proton_prefix,
+            } => {
+                app.cmd_game_add_path(&game_id, &path, &platform, proton_prefix.as_deref())
+                    .await?
             }
             GameCommands::RemovePath { game_id, path } => {
                 app.cmd_game_remove_path(&game_id, &path).await?
@@ -442,9 +465,11 @@ async fn main() -> Result<()> {
             ProfileCommands::Import { path } => app.cmd_profile_import(&path).await?,
         },
         Some(Commands::Import { action }) => match action {
-            ImportCommands::Modlist { path, auto_approve, preview } => {
-                app.cmd_import_modlist(&path, auto_approve, preview).await?
-            }
+            ImportCommands::Modlist {
+                path,
+                auto_approve,
+                preview,
+            } => app.cmd_import_modlist(&path, auto_approve, preview).await?,
             ImportCommands::Status { batch_id } => {
                 app.cmd_import_status(batch_id.as_deref()).await?
             }
@@ -454,34 +479,44 @@ async fn main() -> Result<()> {
         },
         Some(Commands::Queue { action }) => match action {
             QueueCommands::List => app.cmd_queue_list().await?,
-            QueueCommands::Process { batch_id, download_only } => {
-                app.cmd_queue_process(batch_id.as_deref(), download_only).await?
+            QueueCommands::Process {
+                batch_id,
+                download_only,
+            } => {
+                app.cmd_queue_process(batch_id.as_deref(), download_only)
+                    .await?
             }
             QueueCommands::Retry => app.cmd_queue_retry().await?,
-            QueueCommands::Clear { batch_id } => {
-                app.cmd_queue_clear(batch_id.as_deref()).await?
-            }
+            QueueCommands::Clear { batch_id } => app.cmd_queue_clear(batch_id.as_deref()).await?,
         },
         Some(Commands::Modlist { action }) => match action {
-            ModlistCommands::Save { path, format } => {
-                app.cmd_modlist_save(&path, &format).await?
-            }
-            ModlistCommands::Load { path, auto_approve, preview } => {
-                app.cmd_modlist_load(&path, auto_approve, preview).await?
-            }
+            ModlistCommands::Save { path, format } => app.cmd_modlist_save(&path, &format).await?,
+            ModlistCommands::Load {
+                path,
+                auto_approve,
+                preview,
+            } => app.cmd_modlist_load(&path, auto_approve, preview).await?,
         },
         Some(Commands::Nexus { action }) => match action {
-            NexusCommands::Populate { game, reset, per_page, max_pages } => {
-                app.cmd_nexus_populate(&game, reset, per_page, max_pages).await?
+            NexusCommands::Populate {
+                game,
+                reset,
+                per_page,
+                max_pages,
+            } => {
+                app.cmd_nexus_populate(&game, reset, per_page, max_pages)
+                    .await?
             }
-            NexusCommands::Status { game } => {
-                app.cmd_nexus_status(&game).await?
-            }
+            NexusCommands::Status { game } => app.cmd_nexus_status(&game).await?,
         },
         Some(Commands::Deployment { action }) => match action {
             DeploymentCommands::Show => app.cmd_deployment_show().await?,
-            DeploymentCommands::SetMethod { method } => app.cmd_set_deployment_method(&method).await?,
-            DeploymentCommands::SetDownloadsDir { path } => app.cmd_set_downloads_dir(&path).await?,
+            DeploymentCommands::SetMethod { method } => {
+                app.cmd_set_deployment_method(&method).await?
+            }
+            DeploymentCommands::SetDownloadsDir { path } => {
+                app.cmd_set_downloads_dir(&path).await?
+            }
             DeploymentCommands::ClearDownloadsDir => app.cmd_set_downloads_dir("").await?,
             DeploymentCommands::SetStagingDir { path } => app.cmd_set_staging_dir(&path).await?,
             DeploymentCommands::ClearStagingDir => app.cmd_set_staging_dir("").await?,
@@ -496,7 +531,9 @@ async fn main() -> Result<()> {
             ToolCommands::ClearProtonRuntime => app.cmd_tool_clear_proton_runtime().await?,
             ToolCommands::SetProton { path } => app.cmd_tool_set_proton(&path).await?,
             ToolCommands::SetPath { tool, path } => app.cmd_tool_set_path(&tool, &path).await?,
-            ToolCommands::SetRuntime { tool, mode } => app.cmd_tool_set_runtime(&tool, &mode).await?,
+            ToolCommands::SetRuntime { tool, mode } => {
+                app.cmd_tool_set_runtime(&tool, &mode).await?
+            }
             ToolCommands::ClearRuntime { tool } => app.cmd_tool_clear_runtime(&tool).await?,
             ToolCommands::ClearPath { tool } => app.cmd_tool_clear_path(&tool).await?,
             ToolCommands::Run { tool, args } => app.cmd_tool_run(&tool, &args).await?,
@@ -518,17 +555,16 @@ async fn main() -> Result<()> {
             staging_dir,
             proton_prefix,
         }) => {
-            app
-                .cmd_init(
-                    interactive,
-                    game_id.as_deref(),
-                    &platform,
-                    game_path.as_deref(),
-                    downloads_dir.as_deref(),
-                    staging_dir.as_deref(),
-                    proton_prefix.as_deref(),
-                )
-                .await?
+            app.cmd_init(
+                interactive,
+                game_id.as_deref(),
+                &platform,
+                game_path.as_deref(),
+                downloads_dir.as_deref(),
+                staging_dir.as_deref(),
+                proton_prefix.as_deref(),
+            )
+            .await?
         }
         Some(Commands::Audit { dry_run }) => app.cmd_audit(dry_run).await?,
         Some(Commands::GettingStarted) => app.cmd_getting_started().await?,

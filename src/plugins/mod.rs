@@ -1,9 +1,9 @@
 //! Plugin (ESP/ESM/ESL) management
 
 mod loadorder;
-mod parser;
 pub mod loot;
 pub mod masterlist;
+mod parser;
 pub mod sort;
 
 pub use loadorder::*;
@@ -118,7 +118,10 @@ pub fn get_plugins(game: &Game) -> Result<Vec<PluginInfo>> {
             plugin_type,
             enabled,
             load_order: 0, // Will be set when sorting
-            masters: header.as_ref().map(|h| h.masters.clone()).unwrap_or_default(),
+            masters: header
+                .as_ref()
+                .map(|h| h.masters.clone())
+                .unwrap_or_default(),
             is_light,
             description: header.as_ref().and_then(|h| h.description.clone()),
             author: header.as_ref().and_then(|h| h.author.clone()),

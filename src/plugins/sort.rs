@@ -1,8 +1,8 @@
 //! Native Rust implementation of plugin load order optimization
 //! Based on LOOT principles but simplified for direct integration
 
+use super::masterlist::{build_metadata_map, get_group, get_load_after_rules, load_masterlist};
 use super::PluginInfo;
-use super::masterlist::{load_masterlist, build_metadata_map, get_load_after_rules, get_group};
 use anyhow::Result;
 use std::collections::HashMap;
 use std::path::Path;
@@ -165,20 +165,27 @@ fn topological_sort(
         match plugin.plugin_type {
             PluginType::Master => 5, // Mod masters
             PluginType::Light => 6,  // Light plugins
-            PluginType::Plugin => if plugin.is_light { 6 } else { 7 }, // Regular or ESL-flagged
+            PluginType::Plugin => {
+                if plugin.is_light {
+                    6
+                } else {
+                    7
+                }
+            } // Regular or ESL-flagged
         }
     };
 
     // Start with nodes that have no dependencies (in_degree == 0)
-    let mut queue: Vec<usize> = (0..n)
-        .filter(|&i| in_degree[i] == 0)
-        .collect();
+    let mut queue: Vec<usize> = (0..n).filter(|&i| in_degree[i] == 0).collect();
 
     // Sort queue by priority (descending) so lowest priority pops last from the end
     queue.sort_by(|&a, &b| {
         let priority_cmp = get_priority(&plugins[b]).cmp(&get_priority(&plugins[a]));
         if priority_cmp == std::cmp::Ordering::Equal {
-            plugins[b].filename.to_lowercase().cmp(&plugins[a].filename.to_lowercase())
+            plugins[b]
+                .filename
+                .to_lowercase()
+                .cmp(&plugins[a].filename.to_lowercase())
         } else {
             priority_cmp
         }
@@ -314,7 +321,11 @@ mod tests {
     use crate::plugins::PluginType;
     use std::path::PathBuf;
 
-    fn create_test_plugin(filename: &str, plugin_type: PluginType, masters: Vec<String>) -> PluginInfo {
+    fn create_test_plugin(
+        filename: &str,
+        plugin_type: PluginType,
+        masters: Vec<String>,
+    ) -> PluginInfo {
         PluginInfo {
             filename: filename.to_string(),
             path: PathBuf::from(filename),
@@ -331,7 +342,11 @@ mod tests {
     #[test]
     fn test_simple_dependency_sort() {
         let mut plugins = vec![
-            create_test_plugin("Plugin.esp", PluginType::Plugin, vec!["Skyrim.esm".to_string()]),
+            create_test_plugin(
+                "Plugin.esp",
+                PluginType::Plugin,
+                vec!["Skyrim.esm".to_string()],
+            ),
             create_test_plugin("Skyrim.esm", PluginType::Master, vec![]),
         ];
 
@@ -344,7 +359,11 @@ mod tests {
     #[test]
     fn test_validation() {
         let plugins = vec![
-            create_test_plugin("Plugin.esp", PluginType::Plugin, vec!["Skyrim.esm".to_string()]),
+            create_test_plugin(
+                "Plugin.esp",
+                PluginType::Plugin,
+                vec!["Skyrim.esm".to_string()],
+            ),
             create_test_plugin("Skyrim.esm", PluginType::Master, vec![]),
         ];
 

@@ -1,7 +1,7 @@
 //! Application state management
 
 use crate::collections::Collection;
-use crate::db::{CategoryRecord, ModlistRecord, ModlistEntryRecord, NexusCatalogRecord};
+use crate::db::{CategoryRecord, ModlistEntryRecord, ModlistRecord, NexusCatalogRecord};
 use crate::games::Game;
 use crate::mods::fomod::{FileInstruction, FomodInstaller, WizardState};
 use crate::mods::InstalledMod;
@@ -132,8 +132,17 @@ pub struct AppState {
     /// Error message to display
     pub error_message: Option<String>,
 
+    /// Recent raw command output lines (stderr/stdout snippets).
+    pub command_output_log: Vec<String>,
+
     /// Installation progress (0-100)
     pub installation_progress: Option<InstallProgress>,
+
+    /// Whether a bulk install task is currently active.
+    pub bulk_install_running: bool,
+
+    /// Request cooperative cancellation of a bulk install task.
+    pub bulk_install_cancel_requested: bool,
 
     /// Categorization progress
     pub categorization_progress: Option<CategorizationProgress>,
@@ -546,6 +555,26 @@ impl AppState {
         self.status_message = None;
     }
 
+    pub fn push_command_output_line(&mut self, line: impl Into<String>) {
+        let line = line.into().replace('\r', "");
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        self.command_output_log.push(trimmed.to_string());
+        const MAX_LOG_LINES: usize = 8;
+        if self.command_output_log.len() > MAX_LOG_LINES {
+            let overflow = self.command_output_log.len() - MAX_LOG_LINES;
+            self.command_output_log.drain(0..overflow);
+        }
+    }
+
+    pub fn push_command_output_text(&mut self, text: &str) {
+        for line in text.lines() {
+            self.push_command_output_line(line);
+        }
+    }
+
     pub fn toggle_ui_mode(&mut self) {
         self.ui_mode = match self.ui_mode {
             UiMode::Guided => UiMode::Advanced,
@@ -640,6 +669,6 @@ pub struct CatalogProgress {
     pub mods_inserted: i64,
     pub mods_updated: i64,
     pub current_page: i32,
-    pub total_count: i64,  // Total mods in catalog
+    pub total_count: i64,    // Total mods in catalog
     pub current_offset: i32, // Current offset position
 }

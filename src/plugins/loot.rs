@@ -8,8 +8,8 @@ use anyhow::{bail, Context, Result};
 use std::path::PathBuf;
 use std::process::Command;
 
-use crate::games::Game;
 use super::PluginInfo;
+use crate::games::Game;
 
 /// Check if LOOT is installed and available
 pub fn is_loot_available() -> bool {
@@ -56,8 +56,8 @@ fn find_loot_executable() -> Option<PathBuf> {
 
 /// Sort plugin load order using LOOT
 pub fn sort_plugins(game: &Game) -> Result<()> {
-    let loot_exe = find_loot_executable()
-        .ok_or_else(|| anyhow::anyhow!("LOOT executable not found"))?;
+    let loot_exe =
+        find_loot_executable().ok_or_else(|| anyhow::anyhow!("LOOT executable not found"))?;
 
     // LOOT command-line arguments:
     // --game <game> : Specify the game (e.g., Skyrim, SkyrimSE)
@@ -115,5 +115,7 @@ pub fn get_suggested_order(_game: &Game) -> Result<Vec<String>> {
     // reading the loadorder.txt after a sort, or using libloot API
     // For now, we'll just return an error suggesting to use auto-sort
 
-    bail!("Preview mode not available. Use sort_plugins() to apply LOOT's recommendations directly.")
+    bail!(
+        "Preview mode not available. Use sort_plugins() to apply LOOT's recommendations directly."
+    )
 }

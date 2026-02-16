@@ -47,11 +47,15 @@ impl QueueStatus {
             QueueStatus::Completed => "completed",
             QueueStatus::Failed => "failed",
             QueueStatus::Skipped => "skipped",
-        }.to_string()
+        }
+        .to_string()
     }
 
     pub fn is_final(&self) -> bool {
-        matches!(self, QueueStatus::Completed | QueueStatus::Failed | QueueStatus::Skipped)
+        matches!(
+            self,
+            QueueStatus::Completed | QueueStatus::Failed | QueueStatus::Skipped
+        )
     }
 
     pub fn is_actionable(&self) -> bool {

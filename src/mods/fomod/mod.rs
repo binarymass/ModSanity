@@ -128,13 +128,19 @@ fn has_fomod_config(fomod_dir: &Path) -> bool {
     // ModuleConfig.xml is REQUIRED for a valid FOMOD installer
     // info.xml is just metadata and doesn't make it a FOMOD by itself
     if has_module_config {
-        tracing::info!("Valid FOMOD installer found in: {} (Info: {}, Script: {})",
-                      fomod_dir.display(), has_info, has_script);
+        tracing::info!(
+            "Valid FOMOD installer found in: {} (Info: {}, Script: {})",
+            fomod_dir.display(),
+            has_info,
+            has_script
+        );
         true
     } else {
         if has_info {
-            tracing::debug!("Found info.xml but no ModuleConfig.xml in {} - not a valid FOMOD installer",
-                          fomod_dir.display());
+            tracing::debug!(
+                "Found info.xml but no ModuleConfig.xml in {} - not a valid FOMOD installer",
+                fomod_dir.display()
+            );
         }
         false
     }
@@ -142,9 +148,12 @@ fn has_fomod_config(fomod_dir: &Path) -> bool {
 
 /// Find the fomod directory, scanning ALL subdirectories recursively
 pub fn find_fomod_dir(mod_path: &Path) -> Option<PathBuf> {
-    tracing::debug!("Starting exhaustive FOMOD search in: {}", mod_path.display());
+    tracing::debug!(
+        "Starting exhaustive FOMOD search in: {}",
+        mod_path.display()
+    );
 
-    use std::collections::{VecDeque, HashSet};
+    use std::collections::{HashSet, VecDeque};
 
     let mut queue = VecDeque::new();
     let mut visited = HashSet::new(); // Track visited paths to avoid circular references
@@ -187,8 +196,12 @@ pub fn find_fomod_dir(mod_path: &Path) -> Option<PathBuf> {
 
             // Check if this is a fomod directory with valid config
             if dir_name_lower == "fomod" && has_fomod_config(&entry.path()) {
-                tracing::info!("✓ Found FOMOD at depth {} after scanning {} directories: {}",
-                              depth, dirs_scanned, current_path.display());
+                tracing::info!(
+                    "✓ Found FOMOD at depth {} after scanning {} directories: {}",
+                    depth,
+                    dirs_scanned,
+                    current_path.display()
+                );
                 return Some(current_path);
             }
 
@@ -197,8 +210,11 @@ pub fn find_fomod_dir(mod_path: &Path) -> Option<PathBuf> {
         }
     }
 
-    tracing::warn!("✗ No FOMOD found after scanning {} directories in: {}",
-                  dirs_scanned, mod_path.display());
+    tracing::warn!(
+        "✗ No FOMOD found after scanning {} directories in: {}",
+        dirs_scanned,
+        mod_path.display()
+    );
 
     // Print directory structure for debugging (first 3 levels)
     if tracing::enabled!(tracing::Level::DEBUG) {
@@ -249,8 +265,16 @@ pub fn has_numbered_folders(mod_path: &Path) -> bool {
 
                     // Check if folder starts with 2 digits
                     if name_str.len() >= 2
-                        && name_str.chars().nth(0).map(|c| c.is_ascii_digit()).unwrap_or(false)
-                        && name_str.chars().nth(1).map(|c| c.is_ascii_digit()).unwrap_or(false)
+                        && name_str
+                            .chars()
+                            .nth(0)
+                            .map(|c| c.is_ascii_digit())
+                            .unwrap_or(false)
+                        && name_str
+                            .chars()
+                            .nth(1)
+                            .map(|c| c.is_ascii_digit())
+                            .unwrap_or(false)
                     {
                         numbered_count += 1;
                     }
@@ -278,8 +302,16 @@ pub fn get_numbered_components(mod_path: &Path) -> anyhow::Result<Vec<FomodCompo
 
         // Check if folder starts with 2 digits
         if name_str.len() >= 2
-            && name_str.chars().nth(0).map(|c| c.is_ascii_digit()).unwrap_or(false)
-            && name_str.chars().nth(1).map(|c| c.is_ascii_digit()).unwrap_or(false)
+            && name_str
+                .chars()
+                .nth(0)
+                .map(|c| c.is_ascii_digit())
+                .unwrap_or(false)
+            && name_str
+                .chars()
+                .nth(1)
+                .map(|c| c.is_ascii_digit())
+                .unwrap_or(false)
         {
             components.push(FomodComponent {
                 name: name_str.clone(),
@@ -338,8 +370,9 @@ impl FomodInstaller {
     /// Load a FOMOD installer from a mod directory
     pub fn load(mod_path: &Path) -> anyhow::Result<Self> {
         // Find the actual FOMOD base directory (may be nested)
-        let fomod_base = find_fomod_dir(mod_path)
-            .ok_or_else(|| anyhow::anyhow!("FOMOD directory not found in {}", mod_path.display()))?;
+        let fomod_base = find_fomod_dir(mod_path).ok_or_else(|| {
+            anyhow::anyhow!("FOMOD directory not found in {}", mod_path.display())
+        })?;
 
         // Find the actual fomod directory (case-insensitive)
         let fomod = if let Ok(entries) = std::fs::read_dir(&fomod_base) {
@@ -350,7 +383,9 @@ impl FomodInstaller {
                         && entry.file_name().to_string_lossy().to_lowercase() == "fomod"
                 })
                 .map(|e| e.path())
-                .ok_or_else(|| anyhow::anyhow!("fomod directory not found in {}", fomod_base.display()))?
+                .ok_or_else(|| {
+                    anyhow::anyhow!("fomod directory not found in {}", fomod_base.display())
+                })?
         } else {
             anyhow::bail!("Cannot read directory: {}", fomod_base.display());
         };
@@ -358,7 +393,8 @@ impl FomodInstaller {
         tracing::debug!("Found fomod directory: {}", fomod.display());
 
         // Find ModuleConfig.xml (case-insensitive)
-        let config_path = if let Some(path) = find_file_case_insensitive(&fomod, "moduleconfig.xml") {
+        let config_path = if let Some(path) = find_file_case_insensitive(&fomod, "moduleconfig.xml")
+        {
             path
         } else {
             anyhow::bail!("ModuleConfig.xml not found in {}", fomod.display());
@@ -371,8 +407,9 @@ impl FomodInstaller {
             .with_context(|| format!("Failed to read {}", config_path.display()))?;
 
         // Detect encoding and decode appropriately
-        let content = decode_xml_bytes(&bytes)
-            .with_context(|| format!("Failed to decode XML encoding at {}", config_path.display()))?;
+        let content = decode_xml_bytes(&bytes).with_context(|| {
+            format!("Failed to decode XML encoding at {}", config_path.display())
+        })?;
 
         let config = parse_module_config(&content)
             .with_context(|| format!("Failed to parse FOMOD at {}", config_path.display()))?;

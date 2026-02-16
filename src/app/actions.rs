@@ -4,6 +4,80 @@ use super::App;
 use crate::config::{DeploymentMethod, ExternalTool, ToolRuntimeMode};
 use crate::games::{GameDetector, GamePlatform};
 use anyhow::{bail, Context, Result};
+use std::io::{self, IsTerminal, Write};
+use std::time::{Duration, Instant};
+
+struct CliStatusReporter {
+    interactive: bool,
+    last_line_len: usize,
+    last_emit: Instant,
+    min_emit_interval: Duration,
+}
+
+impl CliStatusReporter {
+    fn new(min_emit_interval: Duration) -> Self {
+        Self {
+            interactive: io::stdout().is_terminal(),
+            last_line_len: 0,
+            last_emit: Instant::now() - min_emit_interval,
+            min_emit_interval,
+        }
+    }
+
+    fn emit_catalog_progress(
+        &mut self,
+        pages: i32,
+        inserted: i64,
+        updated: i64,
+        total_count: i64,
+    ) -> io::Result<()> {
+        let now = Instant::now();
+        if now.duration_since(self.last_emit) < self.min_emit_interval {
+            return Ok(());
+        }
+        self.last_emit = now;
+
+        let processed = inserted + updated;
+        let percent = if total_count > 0 {
+            ((processed as f64 / total_count as f64) * 100.0).min(100.0)
+        } else {
+            0.0
+        };
+
+        let line = if total_count > 0 {
+            format!(
+                "Progress: pages={} processed={}/{} ({:.1}%) inserted={} updated={}",
+                pages, processed, total_count, percent, inserted, updated
+            )
+        } else {
+            format!(
+                "Progress: pages={} processed={} inserted={} updated={}",
+                pages, processed, inserted, updated
+            )
+        };
+
+        if self.interactive {
+            print!(
+                "\r{line:<width$}",
+                width = self.last_line_len.max(line.len())
+            );
+            io::stdout().flush()?;
+            self.last_line_len = self.last_line_len.max(line.len());
+        } else {
+            println!("{line}");
+        }
+
+        Ok(())
+    }
+
+    fn finish(&mut self) -> io::Result<()> {
+        if self.interactive {
+            println!();
+            io::stdout().flush()?;
+        }
+        Ok(())
+    }
+}
 
 impl App {
     fn modlist_name_from_path(path: &str, fallback: &str) -> String {
@@ -117,7 +191,10 @@ impl App {
                 println!("Selected: {} ({})", g.name, g.id);
                 self.set_active_game(Some(g)).await?;
             }
-            None => bail!("Game '{}' not found. Run 'modsanity game list' to see available games.", name),
+            None => bail!(
+                "Game '{}' not found. Run 'modsanity game list' to see available games.",
+                name
+            ),
         }
         Ok(())
     }
@@ -175,14 +252,21 @@ impl App {
         };
 
         println!("Installing mod from: {}", path);
-        match self.mods.install_from_archive(&game.id, path, None, None, None, None).await? {
+        match self
+            .mods
+            .install_from_archive(&game.id, path, None, None, None, None)
+            .await?
+        {
             crate::mods::InstallResult::Completed(installed) => {
                 println!("Installed: {} (v{})", installed.name, installed.version);
                 println!("Run 'modsanity deploy' to apply changes.");
                 Ok(())
             }
             crate::mods::InstallResult::RequiresWizard(context) => {
-                println!("ERROR: {} requires FOMOD wizard interaction", context.mod_name);
+                println!(
+                    "ERROR: {} requires FOMOD wizard interaction",
+                    context.mod_name
+                );
                 println!("FOMOD wizards are only supported in TUI mode (run without arguments)");
                 bail!("Interactive wizard required")
             }
@@ -380,15 +464,26 @@ impl App {
         let config = self.config.read().await;
         println!("Deployment Settings");
         println!("{:-<40}", "");
-        println!("Method:           {}", config.deployment.method.display_name());
+        println!(
+            "Method:           {}",
+            config.deployment.method.display_name()
+        );
         println!("Method (raw):     {}", config.deployment.method.as_str());
         println!(
             "Backup originals: {}",
-            if config.deployment.backup_originals { "Yes" } else { "No" }
+            if config.deployment.backup_originals {
+                "Yes"
+            } else {
+                "No"
+            }
         );
         println!(
             "Purge on exit:    {}",
-            if config.deployment.purge_on_exit { "Yes" } else { "No" }
+            if config.deployment.purge_on_exit {
+                "Yes"
+            } else {
+                "No"
+            }
         );
         println!("Downloads dir:    {}", config.downloads_dir().display());
         println!("Staging dir:      {}", config.staging_dir().display());
@@ -397,26 +492,43 @@ impl App {
 
     pub async fn cmd_set_downloads_dir(&self, path: &str) -> Result<()> {
         Self::validate_directory_override(path)?;
-        let override_path = if path.trim().is_empty() { None } else { Some(path) };
+        let override_path = if path.trim().is_empty() {
+            None
+        } else {
+            Some(path)
+        };
         self.set_downloads_dir_override(override_path).await?;
         let resolved = self.resolved_downloads_dir().await;
         if override_path.is_some() {
-            println!("Downloads directory override set to: {}", resolved.display());
+            println!(
+                "Downloads directory override set to: {}",
+                resolved.display()
+            );
         } else {
-            println!("Downloads directory override cleared (using default): {}", resolved.display());
+            println!(
+                "Downloads directory override cleared (using default): {}",
+                resolved.display()
+            );
         }
         Ok(())
     }
 
     pub async fn cmd_set_staging_dir(&self, path: &str) -> Result<()> {
         Self::validate_directory_override(path)?;
-        let override_path = if path.trim().is_empty() { None } else { Some(path) };
+        let override_path = if path.trim().is_empty() {
+            None
+        } else {
+            Some(path)
+        };
         self.set_staging_dir_override(override_path).await?;
         let resolved = self.resolved_staging_dir().await;
         if override_path.is_some() {
             println!("Staging directory override set to: {}", resolved.display());
         } else {
-            println!("Staging directory override cleared (using default): {}", resolved.display());
+            println!(
+                "Staging directory override cleared (using default): {}",
+                resolved.display()
+            );
         }
         Ok(())
     }
@@ -427,7 +539,10 @@ impl App {
         let src = std::path::Path::new(from);
         let dst = std::path::Path::new(to);
         if !src.exists() || !src.is_dir() {
-            bail!("Source staging directory does not exist or is not a directory: {}", src.display());
+            bail!(
+                "Source staging directory does not exist or is not a directory: {}",
+                src.display()
+            );
         }
         if src == dst {
             bail!("Source and destination staging directories are the same path");
@@ -469,7 +584,14 @@ impl App {
         println!("Files total scanned:   {}", files_total);
         println!("Files to copy:         {}", files_to_copy);
         println!("Files skipped(existing): {}", files_skipped_existing);
-        println!("Mode: {}", if dry_run { "dry-run (no writes)" } else { "apply" });
+        println!(
+            "Mode: {}",
+            if dry_run {
+                "dry-run (no writes)"
+            } else {
+                "apply"
+            }
+        );
 
         if dry_run {
             println!("Dry-run complete. Re-run without --dry-run to execute.");
@@ -489,8 +611,9 @@ impl App {
             let target = dst.join(rel);
             if entry.file_type().is_dir() {
                 if !target.exists() {
-                    std::fs::create_dir_all(&target)
-                        .with_context(|| format!("Failed creating directory: {}", target.display()))?;
+                    std::fs::create_dir_all(&target).with_context(|| {
+                        format!("Failed creating directory: {}", target.display())
+                    })?;
                 }
                 continue;
             }
@@ -503,7 +626,11 @@ impl App {
                         .with_context(|| format!("Failed creating parent: {}", parent.display()))?;
                 }
                 std::fs::copy(p, &target).with_context(|| {
-                    format!("Failed copying file: {} -> {}", p.display(), target.display())
+                    format!(
+                        "Failed copying file: {} -> {}",
+                        p.display(),
+                        target.display()
+                    )
                 })?;
                 copied += 1;
             }
@@ -528,7 +655,10 @@ impl App {
             .clone()
             .unwrap_or_else(|| "custom-command".to_string());
         println!("Proton runtime selection: {}", runtime_display);
-        println!("Proton command fallback:  {}", config.external_tools.proton_command);
+        println!(
+            "Proton command fallback:  {}",
+            config.external_tools.proton_command
+        );
         match self.resolve_proton_launcher_from_config(&config) {
             Ok(resolved) => println!("Resolved Proton launcher: {}", resolved),
             Err(e) => println!("Resolved Proton launcher: <unresolved> ({})", e),
@@ -543,9 +673,7 @@ impl App {
             );
         }
         for tool in ExternalTool::all() {
-            let value = config
-                .external_tool_path(*tool)
-                .unwrap_or("Not set");
+            let value = config.external_tool_path(*tool).unwrap_or("Not set");
             let mode = config.external_tool_runtime_mode(*tool).as_str();
             println!("{:>14}: {} (runtime: {})", tool.display_name(), value, mode);
         }
@@ -622,7 +750,8 @@ impl App {
     pub async fn cmd_tool_set_runtime(&self, tool: &str, mode: &str) -> Result<()> {
         let parsed_tool = ExternalTool::from_cli(tool)?;
         let parsed_mode = ToolRuntimeMode::from_cli(mode)?;
-        self.set_external_tool_runtime_mode(parsed_tool, Some(parsed_mode)).await?;
+        self.set_external_tool_runtime_mode(parsed_tool, Some(parsed_mode))
+            .await?;
         println!(
             "{} runtime mode set to: {}",
             parsed_tool.display_name(),
@@ -633,7 +762,8 @@ impl App {
 
     pub async fn cmd_tool_clear_runtime(&self, tool: &str) -> Result<()> {
         let parsed_tool = ExternalTool::from_cli(tool)?;
-        self.set_external_tool_runtime_mode(parsed_tool, None).await?;
+        self.set_external_tool_runtime_mode(parsed_tool, None)
+            .await?;
         println!(
             "{} runtime mode reset to default: proton",
             parsed_tool.display_name()
@@ -666,10 +796,7 @@ impl App {
             Some(p) => println!("Profile:     {}", p),
             None => println!("Profile:     Default"),
         };
-        println!(
-            "Deploy:      {}",
-            config.deployment.method.display_name()
-        );
+        println!("Deploy:      {}", config.deployment.method.display_name());
 
         // Mod counts
         if let Some(game) = self.active_game().await {
@@ -967,7 +1094,10 @@ impl App {
                 &mut ok,
                 &mut warn,
             );
-            hints.push("Select a game first: modsanity game list && modsanity game select <id>".to_string());
+            hints.push(
+                "Select a game first: modsanity game list && modsanity game select <id>"
+                    .to_string(),
+            );
         }
 
         let detected_runtimes = self.detect_proton_runtimes();
@@ -987,22 +1117,32 @@ impl App {
             let runtime_ok = if selected.eq_ignore_ascii_case("auto") {
                 !detected_runtimes.is_empty()
             } else {
-                detected_runtimes
-                    .iter()
-                    .any(|r| r.id.eq_ignore_ascii_case(selected) || r.name.eq_ignore_ascii_case(selected))
+                detected_runtimes.iter().any(|r| {
+                    r.id.eq_ignore_ascii_case(selected) || r.name.eq_ignore_ascii_case(selected)
+                })
             };
             let runtime_detail = if selected.eq_ignore_ascii_case("auto") {
                 format!("auto ({} detected)", detected_runtimes.len())
             } else {
                 selected.to_string()
             };
-            print_check_warn("Proton runtime", runtime_ok, runtime_detail, &mut ok, &mut warn);
+            print_check_warn(
+                "Proton runtime",
+                runtime_ok,
+                runtime_detail,
+                &mut ok,
+                &mut warn,
+            );
             if !runtime_ok {
-                hints.push("Configured Proton runtime not found. Run: modsanity tool list-proton".to_string());
+                hints.push(
+                    "Configured Proton runtime not found. Run: modsanity tool list-proton"
+                        .to_string(),
+                );
             }
         } else {
             let proton_cmd = &config.external_tools.proton_command;
-            let proton_ok = std::path::Path::new(proton_cmd).exists() || which::which(proton_cmd).is_ok();
+            let proton_ok =
+                std::path::Path::new(proton_cmd).exists() || which::which(proton_cmd).is_ok();
             print_check_warn(
                 "Proton command",
                 proton_ok,
@@ -1012,7 +1152,8 @@ impl App {
             );
             if !proton_ok {
                 hints.push(
-                    "Set Proton launcher path: modsanity tool set-proton /path/to/proton".to_string(),
+                    "Set Proton launcher path: modsanity tool set-proton /path/to/proton"
+                        .to_string(),
                 );
                 hints.push(
                     "Or select a Steam-managed runtime: modsanity tool list-proton && modsanity tool use-proton <id>".to_string(),
@@ -1052,7 +1193,13 @@ impl App {
                     tool.display_name(),
                     tool.as_id()
                 ));
-            } else if self.active_game().await.as_ref().and_then(|g| g.proton_prefix.as_ref()).is_none() {
+            } else if self
+                .active_game()
+                .await
+                .as_ref()
+                .and_then(|g| g.proton_prefix.as_ref())
+                .is_none()
+            {
                 hints.push(format!(
                     "{} is configured, but no Proton prefix is active. Use game add-path ... --proton-prefix ...",
                     tool.display_name()
@@ -1103,7 +1250,9 @@ impl App {
             &mut warn,
         );
         if which::which("dotnet").is_err() {
-            hints.push("Install dotnet for native patcher workflows (Synthesis-class tools).".to_string());
+            hints.push(
+                "Install dotnet for native patcher workflows (Synthesis-class tools).".to_string(),
+            );
         }
         if let Some(game) = self.active_game().await {
             if let Some(prefix) = &game.proton_prefix {
@@ -1225,7 +1374,10 @@ impl App {
         println!("  modsanity deploy");
         println!();
         println!("Optional (GOG/manual path registration):");
-        println!("  modsanity game add-path {} <install_path> --platform gog", game_hint);
+        println!(
+            "  modsanity game add-path {} <install_path> --platform gog",
+            game_hint
+        );
         println!("  modsanity game add-path {} <install_path> --platform manual --proton-prefix <prefix>", game_hint);
         println!();
         println!("Interactive mode:");
@@ -1278,7 +1430,11 @@ impl App {
                 chosen_platform = "steam".to_string();
             }
             let p = ask("Platform (steam/gog/manual)", Some(&chosen_platform))?;
-            chosen_platform = if p.trim().is_empty() { "steam".to_string() } else { p };
+            chosen_platform = if p.trim().is_empty() {
+                "steam".to_string()
+            } else {
+                p
+            };
 
             if chosen_game_id.is_none() {
                 let default_game_id = self.games.first().map(|g| g.id.as_str());
@@ -1325,9 +1481,16 @@ impl App {
             self.cmd_set_staging_dir(path).await?;
         }
 
-        if let (Some(game_id), Some(game_path)) = (chosen_game_id.as_deref(), chosen_game_path.as_deref()) {
-            self.cmd_game_add_path(game_id, game_path, &chosen_platform, chosen_prefix.as_deref())
-                .await?;
+        if let (Some(game_id), Some(game_path)) =
+            (chosen_game_id.as_deref(), chosen_game_path.as_deref())
+        {
+            self.cmd_game_add_path(
+                game_id,
+                game_path,
+                &chosen_platform,
+                chosen_prefix.as_deref(),
+            )
+            .await?;
             self.cmd_game_scan().await?;
             self.cmd_game_select(game_id).await?;
         } else if let Some(game_id) = chosen_game_id.as_deref() {
@@ -1357,7 +1520,14 @@ impl App {
 
         println!("ModSanity Audit");
         println!("{:-<60}", "");
-        println!("Mode: {}", if dry_run { "dry-run (no writes)" } else { "live" });
+        println!(
+            "Mode: {}",
+            if dry_run {
+                "dry-run (no writes)"
+            } else {
+                "live"
+            }
+        );
         println!("Game: {} ({})", game.name, game.id);
 
         let mods = self.mods.list_mods(&game.id).await?;
@@ -1372,22 +1542,27 @@ impl App {
             enabled_plugins
         );
 
+        let show_full_trace = dry_run || self.cli_verbosity >= 2;
+        let missing_limit = if show_full_trace { usize::MAX } else { 10 };
+        let order_limit = if show_full_trace { usize::MAX } else { 10 };
+        let conflict_limit = if show_full_trace { usize::MAX } else { 5 };
+
         let missing_masters = crate::plugins::check_missing_masters(&plugins);
         println!("Missing masters: {}", missing_masters.len());
-        for (plugin, missing) in missing_masters.iter().take(10) {
+        for (plugin, missing) in missing_masters.iter().take(missing_limit) {
             println!("  - {} -> {}", plugin, missing.join(", "));
         }
-        if missing_masters.len() > 10 {
-            println!("  ... and {} more", missing_masters.len() - 10);
+        if missing_masters.len() > missing_limit {
+            println!("  ... and {} more", missing_masters.len() - missing_limit);
         }
 
         let order_issues = crate::plugins::validate_load_order(&plugins);
         println!("Load-order issues: {}", order_issues.len());
-        for issue in order_issues.iter().take(10) {
+        for issue in order_issues.iter().take(order_limit) {
             println!("  - {}", issue);
         }
-        if order_issues.len() > 10 {
-            println!("  ... and {} more", order_issues.len() - 10);
+        if order_issues.len() > order_limit {
+            println!("  ... and {} more", order_issues.len() - order_limit);
         }
 
         let conflicts = crate::mods::get_conflicts_grouped(&self.db, &game.id)?;
@@ -1397,7 +1572,7 @@ impl App {
             conflicts.len(),
             conflict_files
         );
-        for conflict in conflicts.iter().take(5) {
+        for conflict in conflicts.iter().take(conflict_limit) {
             println!(
                 "  - {} vs {} ({} files, winner: {})",
                 conflict.mod1,
@@ -1406,8 +1581,8 @@ impl App {
                 conflict.winner
             );
         }
-        if conflicts.len() > 5 {
-            println!("  ... and {} more", conflicts.len() - 5);
+        if conflicts.len() > conflict_limit {
+            println!("  ... and {} more", conflicts.len() - conflict_limit);
         }
 
         if dry_run {
@@ -1421,7 +1596,9 @@ impl App {
     // ========== Modlist Commands ==========
 
     pub async fn cmd_modlist_save(&self, path: &str, format: &str) -> Result<()> {
-        use crate::import::modlist_format::{ModSanityModlist, ModlistMeta, ModlistEntry, PluginOrderEntry};
+        use crate::import::modlist_format::{
+            ModSanityModlist, ModlistEntry, ModlistMeta, PluginOrderEntry,
+        };
         use crate::plugins;
 
         let game = match self.active_game().await {
@@ -1448,8 +1625,9 @@ impl App {
                     .filter_map(|c| c.id.map(|id| (id, c.name)))
                     .collect();
 
-                let mod_entries: Vec<ModlistEntry> = mods.iter().map(|m| {
-                    ModlistEntry {
+                let mod_entries: Vec<ModlistEntry> = mods
+                    .iter()
+                    .map(|m| ModlistEntry {
                         name: m.name.clone(),
                         version: m.version.clone(),
                         nexus_mod_id: m.nexus_mod_id,
@@ -1458,18 +1636,19 @@ impl App {
                         priority: m.priority,
                         enabled: m.enabled,
                         category: m.category_id.and_then(|id| cat_map.get(&id).cloned()),
-                    }
-                }).collect();
+                    })
+                    .collect();
 
                 // Get plugins from game data directory
                 let plugin_entries: Vec<PluginOrderEntry> = match plugins::get_plugins(&game) {
-                    Ok(plist) => plist.iter().map(|p| {
-                        PluginOrderEntry {
+                    Ok(plist) => plist
+                        .iter()
+                        .map(|p| PluginOrderEntry {
                             filename: p.filename.clone(),
                             load_order: p.load_order as i32,
                             enabled: p.enabled,
-                        }
-                    }).collect(),
+                        })
+                        .collect(),
                     Err(_) => Vec::new(),
                 };
 
@@ -1509,7 +1688,11 @@ impl App {
                 let modlist_name = Self::modlist_name_from_path(path, "Saved Modlist");
                 self.persist_modlist_to_db(&game.id, &modlist_name, None, &db_entries)?;
                 println!("Saved native modlist to: {}", path);
-                println!("  {} mods, {} plugins", modlist.mods.len(), modlist.plugins.len());
+                println!(
+                    "  {} mods, {} plugins",
+                    modlist.mods.len(),
+                    modlist.plugins.len()
+                );
                 println!("Stored in database as: {}", modlist_name);
             }
             "mo2" => {
@@ -1564,7 +1747,12 @@ impl App {
         Ok(())
     }
 
-    pub async fn cmd_modlist_load(&self, path: &str, auto_approve: bool, preview: bool) -> Result<()> {
+    pub async fn cmd_modlist_load(
+        &self,
+        path: &str,
+        auto_approve: bool,
+        preview: bool,
+    ) -> Result<()> {
         use crate::import::{detect_format, ModlistFormat};
 
         let file_path = std::path::Path::new(path);
@@ -1572,7 +1760,8 @@ impl App {
 
         match format {
             ModlistFormat::Native => {
-                self.cmd_modlist_load_native(path, auto_approve, preview).await
+                self.cmd_modlist_load_native(path, auto_approve, preview)
+                    .await
             }
             ModlistFormat::Mo2 => {
                 println!("Detected MO2 format, delegating to import command...");
@@ -1581,9 +1770,14 @@ impl App {
         }
     }
 
-    async fn cmd_modlist_load_native(&self, path: &str, auto_approve: bool, preview: bool) -> Result<()> {
-        use crate::import::modlist_format;
+    async fn cmd_modlist_load_native(
+        &self,
+        path: &str,
+        auto_approve: bool,
+        preview: bool,
+    ) -> Result<()> {
         use crate::import::library_check;
+        use crate::import::modlist_format;
         use crate::queue::QueueManager;
 
         let game = match self.active_game().await {
@@ -1597,26 +1791,40 @@ impl App {
         if modlist.meta.game_id != game.id {
             bail!(
                 "Modlist is for game '{}' but active game is '{}'. Select the correct game first.",
-                modlist.meta.game_id, game.id
+                modlist.meta.game_id,
+                game.id
             );
         }
 
         println!("Loading native modlist from: {}", path);
         println!("Game: {} ({})", game.name, game.id);
-        println!("Modlist version: {}, exported: {}", modlist.meta.modsanity_version, modlist.meta.exported_at);
-        println!("  {} mods, {} plugins", modlist.mods.len(), modlist.plugins.len());
+        println!(
+            "Modlist version: {}, exported: {}",
+            modlist.meta.modsanity_version, modlist.meta.exported_at
+        );
+        println!(
+            "  {} mods, {} plugins",
+            modlist.mods.len(),
+            modlist.plugins.len()
+        );
 
         if preview {
             let check_result = library_check::check_library(&self.db, &game.id, modlist.mods)?;
             println!("\nPreview mode: no database or queue writes");
             println!("Library Check:");
-            println!("  Already installed: {}", check_result.already_installed.len());
+            println!(
+                "  Already installed: {}",
+                check_result.already_installed.len()
+            );
             println!("  Needs download:    {}", check_result.needs_download.len());
-            println!("  Queueable (has Nexus ID): {}", check_result
-                .needs_download
-                .iter()
-                .filter(|e| e.nexus_mod_id.unwrap_or_default() > 0)
-                .count());
+            println!(
+                "  Queueable (has Nexus ID): {}",
+                check_result
+                    .needs_download
+                    .iter()
+                    .filter(|e| e.nexus_mod_id.unwrap_or_default() > 0)
+                    .count()
+            );
             return Ok(());
         }
 
@@ -1645,7 +1853,10 @@ impl App {
         let check_result = library_check::check_library(&self.db, &game.id, modlist.mods)?;
 
         println!("\nLibrary Check:");
-        println!("  Already installed: {}", check_result.already_installed.len());
+        println!(
+            "  Already installed: {}",
+            check_result.already_installed.len()
+        );
         println!("  Needs download:    {}", check_result.needs_download.len());
 
         if check_result.needs_download.is_empty() {
@@ -1701,7 +1912,10 @@ impl App {
             println!("\nAuto-approve enabled. Processing queue...");
             self.cmd_queue_process(Some(&batch_id), false).await?;
         } else {
-            println!("\nQueue created. Use 'modsanity queue process --batch-id {}' to start downloads", batch_id);
+            println!(
+                "\nQueue created. Use 'modsanity queue process --batch-id {}' to start downloads",
+                batch_id
+            );
         }
 
         Ok(())
@@ -1709,7 +1923,12 @@ impl App {
 
     // ========== Import Commands ==========
 
-    pub async fn cmd_import_modlist(&self, path: &str, auto_approve: bool, preview: bool) -> Result<()> {
+    pub async fn cmd_import_modlist(
+        &self,
+        path: &str,
+        auto_approve: bool,
+        preview: bool,
+    ) -> Result<()> {
         use crate::import::ModlistImporter;
         use crate::queue::QueueManager;
         use std::path::Path;
@@ -1727,19 +1946,15 @@ impl App {
         println!("Importing modlist from: {}", path);
         println!("Game: {} ({})", game.name, game.id);
 
-        let importer = ModlistImporter::with_catalog(&game.id, (*nexus).clone(), Some(self.db.clone()));
+        let importer =
+            ModlistImporter::with_catalog(&game.id, (*nexus).clone(), Some(self.db.clone()));
         let started = std::time::Instant::now();
         let result = importer
             .import_modlist_with_progress(
                 Path::new(path),
                 Some(|current: usize, total: usize, plugin: &str| {
                     if current == 1 || current % 25 == 0 || current == total {
-                        println!(
-                            "Matching {:>4}/{}: {}",
-                            current,
-                            total.max(current),
-                            plugin
-                        );
+                        println!("Matching {:>4}/{}: {}", current, total.max(current), plugin);
                     }
                 }),
             )
@@ -1761,7 +1976,12 @@ impl App {
             let queueable = result
                 .matches
                 .iter()
-                .filter(|m| m.best_match.as_ref().map(|bm| bm.mod_id > 0).unwrap_or(false))
+                .filter(|m| {
+                    m.best_match
+                        .as_ref()
+                        .map(|bm| bm.mod_id > 0)
+                        .unwrap_or(false)
+                })
                 .count();
             println!("Queueable matches (with Nexus ID): {}", queueable);
             return Ok(());
@@ -1789,12 +2009,16 @@ impl App {
         println!("Stored in database as: {}", modlist_name);
 
         // Library check: skip mods that are already installed
-        let matched_nexus_ids: Vec<i64> = result.matches.iter()
+        let matched_nexus_ids: Vec<i64> = result
+            .matches
+            .iter()
             .filter_map(|m| m.best_match.as_ref().map(|bm| bm.mod_id))
             .filter(|id| *id > 0)
             .collect();
 
-        let installed_mods = self.db.find_mods_by_nexus_ids(&game.id, &matched_nexus_ids)?;
+        let installed_mods = self
+            .db
+            .find_mods_by_nexus_ids(&game.id, &matched_nexus_ids)?;
         let installed_count = installed_mods.len();
 
         if installed_count > 0 {
@@ -1818,36 +2042,39 @@ impl App {
                 }
             }
 
-            let alternatives = match_result.alternatives.iter().map(|alt| {
-                crate::queue::QueueAlternative {
+            let alternatives = match_result
+                .alternatives
+                .iter()
+                .map(|alt| crate::queue::QueueAlternative {
                     mod_id: alt.mod_id,
                     name: alt.name.clone(),
                     summary: alt.summary.clone(),
                     downloads: alt.downloads,
                     score: alt.score,
                     thumbnail_url: None,
-                }
-            }).collect();
+                })
+                .collect();
 
-            let (mod_name, nexus_mod_id, status) = if let Some(best_match) = &match_result.best_match {
-                (
-                    best_match.name.clone(),
-                    best_match.mod_id,
-                    if match_result.confidence.is_high() {
-                        crate::queue::QueueStatus::Matched
-                    } else if match_result.confidence.needs_review() {
-                        crate::queue::QueueStatus::NeedsReview
-                    } else {
-                        crate::queue::QueueStatus::NeedsManual
-                    }
-                )
-            } else {
-                (
-                    match_result.mod_name.clone(),
-                    0,
-                    crate::queue::QueueStatus::NeedsManual
-                )
-            };
+            let (mod_name, nexus_mod_id, status) =
+                if let Some(best_match) = &match_result.best_match {
+                    (
+                        best_match.name.clone(),
+                        best_match.mod_id,
+                        if match_result.confidence.is_high() {
+                            crate::queue::QueueStatus::Matched
+                        } else if match_result.confidence.needs_review() {
+                            crate::queue::QueueStatus::NeedsReview
+                        } else {
+                            crate::queue::QueueStatus::NeedsManual
+                        },
+                    )
+                } else {
+                    (
+                        match_result.mod_name.clone(),
+                        0,
+                        crate::queue::QueueStatus::NeedsManual,
+                    )
+                };
 
             let entry = crate::queue::QueueEntry {
                 id: 0,
@@ -1879,8 +2106,14 @@ impl App {
             println!("\nAuto-approve enabled. Processing queue...");
             self.cmd_queue_process(Some(&batch_id), false).await?;
         } else {
-            println!("\nQueue created. Use 'modsanity queue process --batch-id {}' to start downloads", batch_id);
-            println!("Or use 'modsanity import status {}' to review matches", batch_id);
+            println!(
+                "\nQueue created. Use 'modsanity queue process --batch-id {}' to start downloads",
+                batch_id
+            );
+            println!(
+                "Or use 'modsanity import status {}' to review matches",
+                batch_id
+            );
         }
 
         Ok(())
@@ -1897,7 +2130,10 @@ impl App {
                 let game_filter = active_game.as_ref().map(|g| g.id.as_str());
                 let batches = queue_manager.list_batches(game_filter)?;
                 if let Some(latest) = batches.first() {
-                    println!("No batch ID provided. Showing latest batch: {}", latest.batch_id);
+                    println!(
+                        "No batch ID provided. Showing latest batch: {}",
+                        latest.batch_id
+                    );
                     latest.batch_id.clone()
                 } else {
                     println!("No import batches found.");
@@ -1926,10 +2162,16 @@ impl App {
                 _ => "○",
             };
 
-            println!("{} {} -> {}", status_icon, entry.plugin_name, entry.mod_name);
+            println!(
+                "{} {} -> {}",
+                status_icon, entry.plugin_name, entry.mod_name
+            );
 
             if entry.match_confidence.is_some() {
-                println!("   Confidence: {:.1}%", entry.match_confidence.unwrap() * 100.0);
+                println!(
+                    "   Confidence: {:.1}%",
+                    entry.match_confidence.unwrap() * 100.0
+                );
             }
 
             if !entry.alternatives.is_empty() {
@@ -1970,7 +2212,9 @@ impl App {
         let mut seen_mods = HashSet::new();
 
         for entry in &entries {
-            let hits = self.db.find_mods_by_plugin_filename(&game.id, &entry.plugin_name)?;
+            let hits = self
+                .db
+                .find_mods_by_plugin_filename(&game.id, &entry.plugin_name)?;
             if hits.is_empty() {
                 unresolved_plugins += 1;
                 continue;
@@ -2068,7 +2312,11 @@ impl App {
         Ok(())
     }
 
-    pub async fn cmd_queue_process(&self, batch_id: Option<&str>, download_only: bool) -> Result<()> {
+    pub async fn cmd_queue_process(
+        &self,
+        batch_id: Option<&str>,
+        download_only: bool,
+    ) -> Result<()> {
         use crate::queue::{QueueManager, QueueProcessor};
 
         let game = match self.active_game().await {
@@ -2194,7 +2442,7 @@ impl App {
         per_page: i32,
         max_pages: Option<i32>,
     ) -> Result<()> {
-        use crate::nexus::{NexusRestClient, CatalogPopulator, PopulateOptions};
+        use crate::nexus::{CatalogPopulator, NexusRestClient, PopulateOptions};
 
         // Get API key
         let api_key = match &self.config.read().await.nexus_api_key {
@@ -2203,15 +2451,12 @@ impl App {
         };
 
         // Create REST client
-        let rest_client = NexusRestClient::new(&api_key)
-            .context("Failed to create REST API client")?;
+        let rest_client =
+            NexusRestClient::new(&api_key).context("Failed to create REST API client")?;
 
         // Create populator
-        let populator = CatalogPopulator::new(
-            self.db.clone(),
-            rest_client,
-            game_domain.to_string(),
-        )?;
+        let populator =
+            CatalogPopulator::new(self.db.clone(), rest_client, game_domain.to_string())?;
 
         // Set up options
         let options = PopulateOptions {
@@ -2238,8 +2483,19 @@ impl App {
         println!("{:-<60}", "");
         println!();
 
-        // Run population (no callback for CLI - direct output only)
-        let stats = populator.populate(options, None::<fn(i32, i64, i64, i64, i32)>).await?;
+        // Run population with terminal status feedback.
+        let reporter = std::sync::Mutex::new(CliStatusReporter::new(Duration::from_millis(300)));
+        let progress_callback =
+            |pages: i32, inserted: i64, updated: i64, total: i64, _offset: i32| {
+                if let Ok(mut guard) = reporter.lock() {
+                    let _ = guard.emit_catalog_progress(pages, inserted, updated, total);
+                }
+            };
+
+        let stats = populator.populate(options, Some(progress_callback)).await?;
+        if let Ok(mut guard) = reporter.lock() {
+            let _ = guard.finish();
+        }
 
         // Display results
         println!();
@@ -2256,7 +2512,10 @@ impl App {
 
     pub async fn cmd_nexus_status(&self, game_domain: &str) -> Result<()> {
         // Validate game domain
-        if !game_domain.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_') {
+        if !game_domain
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
+        {
             bail!("Invalid game domain: must contain only lowercase letters, numbers, hyphens, and underscores");
         }
 
@@ -2295,7 +2554,10 @@ impl App {
         if !state.completed {
             println!();
             println!("To resume: modsanity nexus populate --game {}", game_domain);
-            println!("To restart: modsanity nexus populate --game {} --reset", game_domain);
+            println!(
+                "To restart: modsanity nexus populate --game {} --reset",
+                game_domain
+            );
         }
 
         Ok(())

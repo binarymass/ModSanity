@@ -119,7 +119,8 @@ impl InstallPlan {
         let flags_set = collect_flags(wizard);
 
         // Compile file operations
-        let file_operations = compile_file_operations(wizard, installer, staging_path, target_path)?;
+        let file_operations =
+            compile_file_operations(wizard, installer, staging_path, target_path)?;
 
         // Estimate file count and size
         let (estimated_file_count, estimated_size_bytes) =
@@ -146,7 +147,10 @@ impl InstallPlan {
     pub fn preview_text(&self) -> String {
         let mut output = String::new();
 
-        output.push_str(&format!("=== Installation Plan for {} ===\n\n", self.mod_name));
+        output.push_str(&format!(
+            "=== Installation Plan for {} ===\n\n",
+            self.mod_name
+        ));
 
         // Selected options
         output.push_str("Selected Options:\n");

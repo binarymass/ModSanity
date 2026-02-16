@@ -114,7 +114,11 @@ impl NexusClient {
             .context("Failed to read response body")?;
 
         if !status.is_success() {
-            anyhow::bail!("GraphQL request failed with status {}: {}", status, response_text);
+            anyhow::bail!(
+                "GraphQL request failed with status {}: {}",
+                status,
+                response_text
+            );
         }
 
         let graphql_response: GraphQLResponse<R> = serde_json::from_str(&response_text)
@@ -334,12 +338,15 @@ impl NexusClient {
             }],
         };
 
-        tracing::debug!("Fetching requirements for mod {} (game: {})", mod_id, game_domain);
-        let response: Response = self.query(query, variables).await
-            .map_err(|e| {
-                tracing::error!("Failed to fetch requirements for mod {}: {}", mod_id, e);
-                e
-            })?;
+        tracing::debug!(
+            "Fetching requirements for mod {} (game: {})",
+            mod_id,
+            game_domain
+        );
+        let response: Response = self.query(query, variables).await.map_err(|e| {
+            tracing::error!("Failed to fetch requirements for mod {}: {}", mod_id, e);
+            e
+        })?;
 
         let mut requirements = Vec::new();
 
@@ -375,10 +382,7 @@ impl NexusClient {
 
     /// Search for mods with filters and sorting
     /// Note: This query doesn't require authentication per GraphQL v2 docs
-    pub async fn search_mods(
-        &self,
-        search: ModSearchParams,
-    ) -> Result<ModSearchPage> {
+    pub async fn search_mods(&self, search: ModSearchParams) -> Result<ModSearchPage> {
         let query = r#"
             query SearchMods($filter: ModsFilter, $sort: [ModsSort!], $offset: Int, $count: Int) {
                 mods(filter: $filter, sort: $sort, offset: $offset, count: $count) {
@@ -705,11 +709,7 @@ impl NexusClient {
     }
 
     /// Get list of files for a mod (GraphQL v2 - no auth required)
-    pub async fn get_mod_files(
-        &self,
-        game_id: i64,
-        mod_id: i64,
-    ) -> Result<Vec<ModFile>> {
+    pub async fn get_mod_files(&self, game_id: i64, mod_id: i64) -> Result<Vec<ModFile>> {
         let query = r#"
             query ModFiles($modId: ID!, $gameId: ID!) {
                 modFiles(modId: $modId, gameId: $gameId) {
@@ -764,7 +764,8 @@ impl NexusClient {
             .mod_files
             .into_iter()
             .map(|f| {
-                let size_bytes = f.size_in_bytes
+                let size_bytes = f
+                    .size_in_bytes
                     .and_then(|s| s.parse::<i64>().ok())
                     .unwrap_or(f.size * 1024);
                 ModFile {
@@ -839,13 +840,20 @@ impl NexusClient {
     }
 
     /// Resolve a Nexus mod display name using REST API.
-    pub async fn get_mod_name_by_id(&self, game_domain: &str, mod_id: i64) -> Result<Option<String>> {
+    pub async fn get_mod_name_by_id(
+        &self,
+        game_domain: &str,
+        mod_id: i64,
+    ) -> Result<Option<String>> {
         #[derive(Deserialize)]
         struct ModDetails {
             name: Option<String>,
         }
 
-        let url = format!("{}/games/{}/mods/{}.json", REST_API_BASE, game_domain, mod_id);
+        let url = format!(
+            "{}/games/{}/mods/{}.json",
+            REST_API_BASE, game_domain, mod_id
+        );
         let response = reqwest::Client::new()
             .get(&url)
             .header("apikey", &self.api_key)
@@ -853,13 +861,18 @@ impl NexusClient {
             .header("user-agent", "ModSanity/0.1.0")
             .send()
             .await
-            .with_context(|| format!("Failed to fetch mod details for {}:{}", game_domain, mod_id))?;
+            .with_context(|| {
+                format!("Failed to fetch mod details for {}:{}", game_domain, mod_id)
+            })?;
 
         if response.status() == reqwest::StatusCode::NOT_FOUND {
             return Ok(None);
         }
         if !response.status().is_success() {
-            anyhow::bail!("Failed to fetch mod details (status: {})", response.status());
+            anyhow::bail!(
+                "Failed to fetch mod details (status: {})",
+                response.status()
+            );
         }
 
         let details: ModDetails = response
@@ -867,7 +880,10 @@ impl NexusClient {
             .await
             .context("Failed to parse mod details response")?;
 
-        Ok(details.name.map(|n| n.trim().to_string()).filter(|n| !n.is_empty()))
+        Ok(details
+            .name
+            .map(|n| n.trim().to_string())
+            .filter(|n| !n.is_empty()))
     }
 
     /// Download a file from a URL to a local path, reporting progress via callback
@@ -900,7 +916,9 @@ impl NexusClient {
 
         while let Some(chunk) = stream.next().await {
             let chunk = chunk.context("Error reading download stream")?;
-            file.write_all(&chunk).await.context("Error writing to file")?;
+            file.write_all(&chunk)
+                .await
+                .context("Error writing to file")?;
             downloaded += chunk.len() as u64;
             progress_cb(downloaded, total_size);
         }

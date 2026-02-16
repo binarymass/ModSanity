@@ -273,11 +273,7 @@ pub fn parse_module_config(xml: &str) -> Result<ModuleConfig> {
         Ok(config) => Ok(config),
         Err(e) => {
             // Log first 500 chars of XML for debugging
-            let preview = if xml.len() > 500 {
-                &xml[..500]
-            } else {
-                xml
-            };
+            let preview = if xml.len() > 500 { &xml[..500] } else { xml };
             tracing::error!("XML parsing failed: {}", e);
             tracing::debug!("XML preview: {}", preview);
             Err(e).context("Failed to parse ModuleConfig.xml")

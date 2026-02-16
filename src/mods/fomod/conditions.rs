@@ -3,7 +3,7 @@
 //! Evaluates boolean expressions for plugin visibility and dependencies.
 //! Supports AND/OR/NOT logic, flag dependencies, and file dependencies.
 
-use super::{Dependencies, Plugin, Pattern};
+use super::{Dependencies, Pattern, Plugin};
 use std::collections::HashMap;
 
 /// File states for dependency checking

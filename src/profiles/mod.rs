@@ -63,10 +63,8 @@ impl Profile {
 
     /// Add a mod to the profile
     pub fn add_mod(&mut self, mod_name: impl Into<String>, enabled: bool, priority: i32) {
-        self.mods.insert(
-            mod_name.into(),
-            ModState { enabled, priority },
-        );
+        self.mods
+            .insert(mod_name.into(), ModState { enabled, priority });
         self.updated_at = chrono::Utc::now().to_rfc3339();
     }
 

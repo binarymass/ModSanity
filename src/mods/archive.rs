@@ -67,7 +67,11 @@ pub async fn extract_archive(
 }
 
 /// Extract a ZIP archive
-fn extract_zip(archive: &Path, dest: &Path, progress_callback: Option<ProgressCallback>) -> Result<()> {
+fn extract_zip(
+    archive: &Path,
+    dest: &Path,
+    progress_callback: Option<ProgressCallback>,
+) -> Result<()> {
     let file = std::fs::File::open(archive).context("Failed to open archive")?;
     let mut zip = zip::ZipArchive::new(file).context("Failed to read ZIP archive")?;
 
@@ -107,7 +111,11 @@ fn extract_zip(archive: &Path, dest: &Path, progress_callback: Option<ProgressCa
 }
 
 /// Extract a 7z archive
-fn extract_7z(archive: &Path, dest: &Path, progress_callback: Option<ProgressCallback>) -> Result<()> {
+fn extract_7z(
+    archive: &Path,
+    dest: &Path,
+    progress_callback: Option<ProgressCallback>,
+) -> Result<()> {
     // Note: sevenz_rust doesn't support progress callbacks yet
     // We'll just report at start and end
     if let Some(ref cb) = progress_callback {
@@ -124,7 +132,11 @@ fn extract_7z(archive: &Path, dest: &Path, progress_callback: Option<ProgressCal
 }
 
 /// Extract a RAR archive
-fn extract_rar(archive: &Path, dest: &Path, progress_callback: Option<ProgressCallback>) -> Result<()> {
+fn extract_rar(
+    archive: &Path,
+    dest: &Path,
+    progress_callback: Option<ProgressCallback>,
+) -> Result<()> {
     // Note: unrar command-line tool doesn't provide easy progress tracking
     // We'll just report at start and end
     if let Some(ref cb) = progress_callback {

@@ -16,7 +16,8 @@ impl FomodHelpers {
             // Common FOMOD indicators in filename
             if name_lower.contains("fomod")
                 || name_lower.contains("installer")
-                || name_lower.contains("options") {
+                || name_lower.contains("options")
+            {
                 return true;
             }
         }
@@ -175,9 +176,15 @@ mod tests {
 
     #[test]
     fn test_fomod_detection() {
-        assert!(FomodHelpers::is_likely_fomod(&PathBuf::from("test-fomod-installer.7z")));
-        assert!(FomodHelpers::is_likely_fomod(&PathBuf::from("ModName-Options.zip")));
-        assert!(!FomodHelpers::is_likely_fomod(&PathBuf::from("simple-mod.7z")));
+        assert!(FomodHelpers::is_likely_fomod(&PathBuf::from(
+            "test-fomod-installer.7z"
+        )));
+        assert!(FomodHelpers::is_likely_fomod(&PathBuf::from(
+            "ModName-Options.zip"
+        )));
+        assert!(!FomodHelpers::is_likely_fomod(&PathBuf::from(
+            "simple-mod.7z"
+        )));
     }
 
     #[test]
@@ -185,7 +192,10 @@ mod tests {
         assert_eq!(FomodHelpers::format_file_size(512), "512 bytes");
         assert_eq!(FomodHelpers::format_file_size(1024), "1.00 KB");
         assert_eq!(FomodHelpers::format_file_size(1024 * 1024), "1.00 MB");
-        assert_eq!(FomodHelpers::format_file_size(1024 * 1024 * 1024), "1.00 GB");
+        assert_eq!(
+            FomodHelpers::format_file_size(1024 * 1024 * 1024),
+            "1.00 GB"
+        );
     }
 
     #[test]

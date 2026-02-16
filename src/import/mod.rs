@@ -12,14 +12,16 @@ pub mod modlist_parser;
 
 pub use filters::PluginFilter;
 pub use library_check::{check_library, LibraryCheckResult};
-pub use matcher::{ModMatcher, MatchResult, MatchConfidence};
-pub use modlist_format::{ModSanityModlist, ModlistMeta, ModlistEntry, PluginOrderEntry, ModlistFormat, detect_format};
+pub use matcher::{MatchConfidence, MatchResult, ModMatcher};
+pub use modlist_format::{
+    detect_format, ModSanityModlist, ModlistEntry, ModlistFormat, ModlistMeta, PluginOrderEntry,
+};
 pub use modlist_parser::{ModlistParser, PluginEntry};
 
+use crate::db::Database;
 use anyhow::Result;
 use std::path::Path;
 use std::sync::Arc;
-use crate::db::Database;
 
 /// Main orchestrator for MO2 modlist import
 pub struct ModlistImporter {
@@ -35,7 +37,11 @@ impl ModlistImporter {
     }
 
     /// Create a new importer with optional local catalog search
-    pub fn with_catalog(game_id: &str, nexus_client: crate::nexus::NexusClient, db: Option<Arc<Database>>) -> Self {
+    pub fn with_catalog(
+        game_id: &str,
+        nexus_client: crate::nexus::NexusClient,
+        db: Option<Arc<Database>>,
+    ) -> Self {
         Self {
             parser: ModlistParser::new(),
             filter: PluginFilter::for_game(game_id),
@@ -45,11 +51,16 @@ impl ModlistImporter {
 
     /// Import a modlist.txt file
     pub async fn import_modlist(&self, path: &Path) -> Result<ImportResult> {
-        self.import_modlist_with_progress(path, None::<fn(usize, usize, &str)>).await
+        self.import_modlist_with_progress(path, None::<fn(usize, usize, &str)>)
+            .await
     }
 
     /// Import a modlist.txt file with progress callback
-    pub async fn import_modlist_with_progress<F>(&self, path: &Path, mut progress_callback: Option<F>) -> Result<ImportResult>
+    pub async fn import_modlist_with_progress<F>(
+        &self,
+        path: &Path,
+        mut progress_callback: Option<F>,
+    ) -> Result<ImportResult>
     where
         F: FnMut(usize, usize, &str),
     {
@@ -66,7 +77,8 @@ impl ModlistImporter {
             .filter(|p| !self.filter.should_skip(&p.plugin_name))
             .collect();
 
-        tracing::info!("Parsed {} plugins, {} after filtering",
+        tracing::info!(
+            "Parsed {} plugins, {} after filtering",
             filtered.len() + self.filter.skipped_count(),
             filtered.len()
         );

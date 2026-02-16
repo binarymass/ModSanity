@@ -24,10 +24,7 @@ pub fn check_library(
     entries: Vec<ModlistEntry>,
 ) -> Result<LibraryCheckResult> {
     // Collect all nexus_mod_ids for batch lookup
-    let nexus_ids: Vec<i64> = entries
-        .iter()
-        .filter_map(|e| e.nexus_mod_id)
-        .collect();
+    let nexus_ids: Vec<i64> = entries.iter().filter_map(|e| e.nexus_mod_id).collect();
 
     // Batch lookup by nexus_mod_id
     let installed_by_nexus_id = db.find_mods_by_nexus_ids(game_id, &nexus_ids)?;

@@ -15,7 +15,11 @@ use ratatui::{
 /// Render the Nexus Catalog screen
 pub fn render(f: &mut Frame, area: Rect, state: &AppState) {
     // If catalog is populated and we have browse results, show browse view
-    let has_catalog = state.catalog_sync_state.as_ref().map(|s| s.completed && s.total_mods > 0).unwrap_or(false);
+    let has_catalog = state
+        .catalog_sync_state
+        .as_ref()
+        .map(|s| s.completed && s.total_mods > 0)
+        .unwrap_or(false);
 
     if state.catalog_populating {
         render_status_view(f, area, state);
@@ -40,7 +44,11 @@ fn render_status_view(f: &mut Frame, area: Rect, state: &AppState) {
 
     // Title
     let title = Paragraph::new("Nexus Mods Catalog")
-        .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::ALL));
     f.render_widget(title, chunks[0]);
@@ -74,24 +82,33 @@ fn render_browse_view(f: &mut Frame, area: Rect, state: &AppState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // Search bar
+            Constraint::Length(3), // Search bar
             Constraint::Min(10),   // Main content
-            Constraint::Length(3),  // Help
+            Constraint::Length(3), // Help
         ])
         .split(area);
 
     // Search bar
     let search_display = if state.catalog_search_query.is_empty() {
-        format!(" Catalog: {} mods | /: Search | p: Populate | r: Reset",
-            state.catalog_total_count)
+        format!(
+            " Catalog: {} mods | /: Search | p: Populate | r: Reset",
+            state.catalog_total_count
+        )
     } else {
-        format!(" Search: \"{}\" | {} results | /: New search | Esc: Clear search",
-            state.catalog_search_query, state.catalog_browse_results.len())
+        format!(
+            " Search: \"{}\" | {} results | /: New search | Esc: Clear search",
+            state.catalog_search_query,
+            state.catalog_browse_results.len()
+        )
     };
 
     let search_bar = Paragraph::new(search_display)
         .style(Style::default().fg(Color::Cyan))
-        .block(Block::default().borders(Borders::ALL).title(" Nexus Catalog "));
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Nexus Catalog "),
+        );
     f.render_widget(search_bar, chunks[0]);
 
     // Main content: mod list (left) + details (right)
@@ -113,7 +130,9 @@ fn render_browse_view(f: &mut Frame, area: Rect, state: &AppState) {
             .enumerate()
             .map(|(i, m)| {
                 let style = if i == state.selected_catalog_index {
-                    Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .bg(Color::DarkGray)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default()
                 };
@@ -124,7 +143,10 @@ fn render_browse_view(f: &mut Frame, area: Rect, state: &AppState) {
 
         let page_start = state.catalog_browse_offset + 1;
         let page_end = state.catalog_browse_offset + results.len() as i64;
-        let title = format!(" Mods ({}-{} of {}) ", page_start, page_end, state.catalog_total_count);
+        let title = format!(
+            " Mods ({}-{} of {}) ",
+            page_start, page_end, state.catalog_total_count
+        );
 
         let list = List::new(items)
             .block(Block::default().title(title).borders(Borders::ALL))
@@ -137,7 +159,8 @@ fn render_browse_view(f: &mut Frame, area: Rect, state: &AppState) {
 
     // Details panel
     if let Some(m) = results.get(state.selected_catalog_index) {
-        let updated = m.updated_time
+        let updated = m
+            .updated_time
             .map(|t| {
                 chrono::DateTime::from_timestamp(t, 0)
                     .map(|dt| dt.format("%Y-%m-%d").to_string())
@@ -146,13 +169,24 @@ fn render_browse_view(f: &mut Frame, area: Rect, state: &AppState) {
             .unwrap_or_else(|| "Unknown".to_string());
 
         let details = vec![
-            Line::from(Span::styled(&m.name, Style::default().add_modifier(Modifier::BOLD).fg(Color::Cyan))),
+            Line::from(Span::styled(
+                &m.name,
+                Style::default()
+                    .add_modifier(Modifier::BOLD)
+                    .fg(Color::Cyan),
+            )),
             Line::from(""),
             Line::from(format!("Mod ID:  {}", m.mod_id)),
-            Line::from(format!("Author:  {}", m.author.as_deref().unwrap_or("Unknown"))),
+            Line::from(format!(
+                "Author:  {}",
+                m.author.as_deref().unwrap_or("Unknown")
+            )),
             Line::from(format!("Updated: {}", updated)),
             Line::from(""),
-            Line::from(Span::styled("Summary:", Style::default().add_modifier(Modifier::BOLD))),
+            Line::from(Span::styled(
+                "Summary:",
+                Style::default().add_modifier(Modifier::BOLD),
+            )),
             Line::from(m.summary.as_deref().unwrap_or("No summary available")),
         ];
 
@@ -168,7 +202,8 @@ fn render_browse_view(f: &mut Frame, area: Rect, state: &AppState) {
     }
 
     // Help bar
-    let help_text = "j/k: Navigate | /: Search | n/p: Next/Prev Page | r: Reset catalog | Esc: Back | q: Quit";
+    let help_text =
+        "j/k: Navigate | /: Search | n/p: Next/Prev Page | r: Reset catalog | Esc: Back | q: Quit";
     let help = Paragraph::new(help_text)
         .style(Style::default().fg(Color::Gray))
         .alignment(Alignment::Center)
@@ -192,16 +227,30 @@ fn render_status(f: &mut Frame, area: Rect, state: &AppState) {
             Line::from(vec![
                 Span::styled("Status: ", Style::default().add_modifier(Modifier::BOLD)),
                 Span::styled(
-                    if sync_state.completed { "✓ Completed" } else { "In Progress" },
-                    Style::default().fg(if sync_state.completed { Color::Green } else { Color::Yellow }),
+                    if sync_state.completed {
+                        "✓ Completed"
+                    } else {
+                        "In Progress"
+                    },
+                    Style::default().fg(if sync_state.completed {
+                        Color::Green
+                    } else {
+                        Color::Yellow
+                    }),
                 ),
             ]),
             Line::from(vec![
-                Span::styled("Current Page: ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Current Page: ",
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
                 Span::raw(sync_state.current_page.to_string()),
             ]),
             Line::from(vec![
-                Span::styled("Total Mods: ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Total Mods: ",
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
                 Span::raw(sync_state.total_mods.to_string()),
             ]),
         ]
@@ -216,7 +265,11 @@ fn render_status(f: &mut Frame, area: Rect, state: &AppState) {
     };
 
     let status = Paragraph::new(status_text)
-        .block(Block::default().borders(Borders::ALL).title("Catalog Status"))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Catalog Status"),
+        )
         .wrap(Wrap { trim: true });
     f.render_widget(status, area);
 }
@@ -233,20 +286,28 @@ fn render_progress(f: &mut Frame, area: Rect, state: &AppState) {
     if let Some(progress) = &state.catalog_progress {
         // Progress bar based on offset vs total count
         let percent = if progress.total_count > 0 {
-            let progress_pct = (progress.current_offset as f64 / progress.total_count as f64) * 100.0;
+            let progress_pct =
+                (progress.current_offset as f64 / progress.total_count as f64) * 100.0;
             progress_pct.min(100.0) as u16
         } else {
             0
         };
 
         let label = if progress.total_count > 0 {
-            format!("{}/{} mods ({}%)", progress.current_offset, progress.total_count, percent)
+            format!(
+                "{}/{} mods ({}%)",
+                progress.current_offset, progress.total_count, percent
+            )
         } else {
             "Fetching...".to_string()
         };
 
         let gauge = Gauge::default()
-            .block(Block::default().borders(Borders::ALL).title("Population Progress"))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Population Progress"),
+            )
             .gauge_style(Style::default().fg(Color::Cyan))
             .percent(percent)
             .label(label);
@@ -255,15 +316,24 @@ fn render_progress(f: &mut Frame, area: Rect, state: &AppState) {
         // Details
         let details_text = vec![
             Line::from(vec![
-                Span::styled("Pages Fetched: ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Pages Fetched: ",
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
                 Span::raw(progress.pages_fetched.to_string()),
             ]),
             Line::from(vec![
-                Span::styled("Mods Inserted: ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Mods Inserted: ",
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
                 Span::raw(progress.mods_inserted.to_string()),
             ]),
             Line::from(vec![
-                Span::styled("Mods Updated: ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "Mods Updated: ",
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
                 Span::raw(progress.mods_updated.to_string()),
             ]),
             Line::from(""),
@@ -331,7 +401,11 @@ pub async fn handle_input(app: &mut App, key: KeyCode) -> Result<()> {
         return Ok(());
     }
 
-    let has_catalog = state.catalog_sync_state.as_ref().map(|s| s.completed && s.total_mods > 0).unwrap_or(false);
+    let has_catalog = state
+        .catalog_sync_state
+        .as_ref()
+        .map(|s| s.completed && s.total_mods > 0)
+        .unwrap_or(false);
     let has_browse = has_catalog || !state.catalog_browse_results.is_empty();
     let result_count = state.catalog_browse_results.len();
     drop(state);
@@ -423,7 +497,12 @@ pub async fn handle_input(app: &mut App, key: KeyCode) -> Result<()> {
 }
 
 /// Load a page of catalog mods (or search results)
-pub async fn load_catalog_page(app: &mut App, game_domain: &str, offset: i64, search_query: &str) -> Result<()> {
+pub async fn load_catalog_page(
+    app: &mut App,
+    game_domain: &str,
+    offset: i64,
+    search_query: &str,
+) -> Result<()> {
     let results = if search_query.is_empty() {
         app.db.list_catalog_mods(game_domain, offset, 100)?
     } else {
@@ -444,7 +523,7 @@ pub async fn load_catalog_page(app: &mut App, game_domain: &str, offset: i64, se
 }
 
 async fn populate_catalog(app: &mut App, reset: bool) -> Result<()> {
-    use crate::nexus::{NexusRestClient, CatalogPopulator, PopulateOptions};
+    use crate::nexus::{CatalogPopulator, NexusRestClient, PopulateOptions};
 
     // Get game domain
     let game = match app.active_game().await {
@@ -505,18 +584,19 @@ async fn populate_catalog(app: &mut App, reset: bool) -> Result<()> {
 
             // Create progress callback to update state
             let state_for_callback = state_clone.clone();
-            let callback = move |pages: i32, inserted: i64, updated: i64, total: i64, offset: i32| {
-                if let Ok(mut state) = state_for_callback.try_write() {
-                    state.catalog_progress = Some(CatalogProgress {
-                        pages_fetched: pages,
-                        mods_inserted: inserted,
-                        mods_updated: updated,
-                        current_page: pages + 1,
-                        total_count: total,
-                        current_offset: offset,
-                    });
-                }
-            };
+            let callback =
+                move |pages: i32, inserted: i64, updated: i64, total: i64, offset: i32| {
+                    if let Ok(mut state) = state_for_callback.try_write() {
+                        state.catalog_progress = Some(CatalogProgress {
+                            pages_fetched: pages,
+                            mods_inserted: inserted,
+                            mods_updated: updated,
+                            current_page: pages + 1,
+                            total_count: total,
+                            current_offset: offset,
+                        });
+                    }
+                };
 
             let stats = populator.populate(options, Some(callback)).await?;
 
@@ -550,7 +630,8 @@ async fn populate_catalog(app: &mut App, reset: bool) -> Result<()> {
             }
 
             Ok(())
-        }.await;
+        }
+        .await;
 
         if let Err(e) = result {
             let mut state = state_clone.write().await;

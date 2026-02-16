@@ -191,7 +191,7 @@ pub enum ExternalTool {
     SSEEdit,
     FNIS,
     Nemesis,
-    Symphony,
+    Synthesis,
     BodySlide,
     OutfitStudio,
 }
@@ -203,7 +203,7 @@ impl ExternalTool {
             ExternalTool::SSEEdit => "ssedit",
             ExternalTool::FNIS => "fnis",
             ExternalTool::Nemesis => "nemesis",
-            ExternalTool::Symphony => "symphony",
+            ExternalTool::Synthesis => "symphony",
             ExternalTool::BodySlide => "bodyslide",
             ExternalTool::OutfitStudio => "outfitstudio",
         }
@@ -215,7 +215,7 @@ impl ExternalTool {
             ExternalTool::SSEEdit => "SSEEdit",
             ExternalTool::FNIS => "FNIS",
             ExternalTool::Nemesis => "Nemesis",
-            ExternalTool::Symphony => "Symphony",
+            ExternalTool::Synthesis => "Synthesis",
             ExternalTool::BodySlide => "BodySlide",
             ExternalTool::OutfitStudio => "Outfit Studio",
         }
@@ -227,7 +227,7 @@ impl ExternalTool {
             ExternalTool::SSEEdit,
             ExternalTool::FNIS,
             ExternalTool::Nemesis,
-            ExternalTool::Symphony,
+            ExternalTool::Synthesis,
             ExternalTool::BodySlide,
             ExternalTool::OutfitStudio,
         ]
@@ -239,7 +239,7 @@ impl ExternalTool {
             "ssedit" | "sseedit" | "sse" => Ok(ExternalTool::SSEEdit),
             "fnis" => Ok(ExternalTool::FNIS),
             "nemesis" => Ok(ExternalTool::Nemesis),
-            "symphony" => Ok(ExternalTool::Symphony),
+            "symphony" => Ok(ExternalTool::Synthesis),
             "bodyslide" | "bs" => Ok(ExternalTool::BodySlide),
             "outfitstudio" | "outfit-studio" | "os" => Ok(ExternalTool::OutfitStudio),
             other => bail!(
@@ -344,7 +344,7 @@ impl Config {
             ExternalTool::SSEEdit => self.external_tools.ssedit_path.as_deref(),
             ExternalTool::FNIS => self.external_tools.fnis_path.as_deref(),
             ExternalTool::Nemesis => self.external_tools.nemesis_path.as_deref(),
-            ExternalTool::Symphony => self.external_tools.symphony_path.as_deref(),
+            ExternalTool::Synthesis => self.external_tools.symphony_path.as_deref(),
             ExternalTool::BodySlide => self.external_tools.bodyslide_path.as_deref(),
             ExternalTool::OutfitStudio => self.external_tools.outfitstudio_path.as_deref(),
         }
@@ -356,7 +356,7 @@ impl Config {
             ExternalTool::SSEEdit => self.external_tools.ssedit_path = path,
             ExternalTool::FNIS => self.external_tools.fnis_path = path,
             ExternalTool::Nemesis => self.external_tools.nemesis_path = path,
-            ExternalTool::Symphony => self.external_tools.symphony_path = path,
+            ExternalTool::Synthesis => self.external_tools.symphony_path = path,
             ExternalTool::BodySlide => self.external_tools.bodyslide_path = path,
             ExternalTool::OutfitStudio => self.external_tools.outfitstudio_path = path,
         }
@@ -368,20 +368,24 @@ impl Config {
             ExternalTool::SSEEdit => self.external_tools.ssedit_runtime_mode,
             ExternalTool::FNIS => self.external_tools.fnis_runtime_mode,
             ExternalTool::Nemesis => self.external_tools.nemesis_runtime_mode,
-            ExternalTool::Symphony => self.external_tools.symphony_runtime_mode,
+            ExternalTool::Synthesis => self.external_tools.symphony_runtime_mode,
             ExternalTool::BodySlide => self.external_tools.bodyslide_runtime_mode,
             ExternalTool::OutfitStudio => self.external_tools.outfitstudio_runtime_mode,
         }
         .unwrap_or(ToolRuntimeMode::Proton)
     }
 
-    pub fn set_external_tool_runtime_mode(&mut self, tool: ExternalTool, mode: Option<ToolRuntimeMode>) {
+    pub fn set_external_tool_runtime_mode(
+        &mut self,
+        tool: ExternalTool,
+        mode: Option<ToolRuntimeMode>,
+    ) {
         match tool {
             ExternalTool::XEdit => self.external_tools.xedit_runtime_mode = mode,
             ExternalTool::SSEEdit => self.external_tools.ssedit_runtime_mode = mode,
             ExternalTool::FNIS => self.external_tools.fnis_runtime_mode = mode,
             ExternalTool::Nemesis => self.external_tools.nemesis_runtime_mode = mode,
-            ExternalTool::Symphony => self.external_tools.symphony_runtime_mode = mode,
+            ExternalTool::Synthesis => self.external_tools.symphony_runtime_mode = mode,
             ExternalTool::BodySlide => self.external_tools.bodyslide_runtime_mode = mode,
             ExternalTool::OutfitStudio => self.external_tools.outfitstudio_runtime_mode = mode,
         }

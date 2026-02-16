@@ -1,6 +1,6 @@
 //! Nexus Mods catalog client using GraphQL v2 API
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -114,7 +114,8 @@ impl NexusRestClient {
                 }
 
                 // Check for Retry-After header
-                let retry_after = if let Some(retry_header) = response.headers().get("retry-after") {
+                let retry_after = if let Some(retry_header) = response.headers().get("retry-after")
+                {
                     retry_header
                         .to_str()
                         .ok()
@@ -182,16 +183,24 @@ impl NexusRestClient {
                     message: String,
                 }
 
-                let response_text = response.text().await.context("Failed to read response body")?;
+                let response_text = response
+                    .text()
+                    .await
+                    .context("Failed to read response body")?;
                 let graphql_response: GraphQLResponse = serde_json::from_str(&response_text)
-                    .with_context(|| format!("Failed to parse GraphQL response: {}", response_text))?;
+                    .with_context(|| {
+                        format!("Failed to parse GraphQL response: {}", response_text)
+                    })?;
 
                 if let Some(errors) = graphql_response.errors {
-                    let error_messages: Vec<String> = errors.iter().map(|e| e.message.clone()).collect();
+                    let error_messages: Vec<String> =
+                        errors.iter().map(|e| e.message.clone()).collect();
                     bail!("GraphQL errors: {}", error_messages.join(", "));
                 }
 
-                let data = graphql_response.data.context("GraphQL response contained no data")?;
+                let data = graphql_response
+                    .data
+                    .context("GraphQL response contained no data")?;
                 let mods_page = data.mods;
 
                 tracing::debug!(

@@ -55,8 +55,7 @@ pub enum ModlistFormat {
 
 /// Detect whether a file is native JSON or MO2 text format by content inspection
 pub fn detect_format(path: &Path) -> Result<ModlistFormat> {
-    let content = std::fs::read_to_string(path)
-        .context("Failed to read modlist file")?;
+    let content = std::fs::read_to_string(path).context("Failed to read modlist file")?;
 
     let trimmed = content.trim_start();
 
@@ -70,18 +69,14 @@ pub fn detect_format(path: &Path) -> Result<ModlistFormat> {
 
 /// Load a native ModSanity modlist from a JSON file
 pub fn load_native(path: &Path) -> Result<ModSanityModlist> {
-    let content = std::fs::read_to_string(path)
-        .context("Failed to read modlist file")?;
+    let content = std::fs::read_to_string(path).context("Failed to read modlist file")?;
 
-    serde_json::from_str(&content)
-        .context("Failed to parse native modlist JSON")
+    serde_json::from_str(&content).context("Failed to parse native modlist JSON")
 }
 
 /// Save a native ModSanity modlist to a JSON file
 pub fn save_native(path: &Path, modlist: &ModSanityModlist) -> Result<()> {
-    let json = serde_json::to_string_pretty(modlist)
-        .context("Failed to serialize modlist")?;
+    let json = serde_json::to_string_pretty(modlist).context("Failed to serialize modlist")?;
 
-    std::fs::write(path, json)
-        .context("Failed to write modlist file")
+    std::fs::write(path, json).context("Failed to write modlist file")
 }

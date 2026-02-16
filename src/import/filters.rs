@@ -35,13 +35,15 @@ impl PluginFilter {
 
         // Check exact matches
         if self.skip_patterns.contains(&lower) {
-            self.skipped.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            self.skipped
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             return true;
         }
 
         // Check Creation Club prefix (all games)
         if lower.starts_with("cc") && (lower.ends_with(".esm") || lower.ends_with(".esl")) {
-            self.skipped.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            self.skipped
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             return true;
         }
 
@@ -161,11 +163,7 @@ fn oblivion_skip_patterns() -> HashSet<String> {
 
 /// Morrowind base game and DLC plugins
 fn morrowind_skip_patterns() -> HashSet<String> {
-    let patterns = vec![
-        "morrowind.esm",
-        "tribunal.esm",
-        "bloodmoon.esm",
-    ];
+    let patterns = vec!["morrowind.esm", "tribunal.esm", "bloodmoon.esm"];
 
     patterns.into_iter().map(|s| s.to_string()).collect()
 }
